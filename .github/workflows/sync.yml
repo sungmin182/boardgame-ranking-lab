@@ -51,9 +51,12 @@ jobs:
         run: node scripts/build.mjs
 
       - name: 배포 아티팩트 준비
+        # data/ranks.json 은 build 의 입력일 뿐이라 배포하지 않는다(수 MB).
         run: |
-          mkdir -p _site
-          cp -r index.html assets data _site/
+          mkdir -p _site/data
+          cp index.html _site/
+          cp -r assets _site/
+          cp data/games.json _site/data/
 
       - uses: actions/upload-pages-artifact@v3
         with:

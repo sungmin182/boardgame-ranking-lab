@@ -738,7 +738,7 @@ function buildFilters() {
 
   rangeInputs($('#rankRange'), 'rankMin', 'rankMax', {
     min: 1,
-    max: 2000,
+    max: state.data.games.at(-1)?.rank ?? 1500,
     labelEl: $('#rankLabel'),
   });
   rangeInputs($('#votesRange'), 'votesMin', 'votesMax', {
