@@ -1,0 +1,15 @@
+# Cloudflare Worker 배포 설정
+#
+#   npx wrangler login                            # 최초 1회, 브라우저에서 인증
+#   npx wrangler deploy --config proxy/wrangler.toml
+#
+# 배포되면 https://<name>.<계정>.workers.dev 주소가 나온다.
+# 그 주소를 assets/config.js 의 LIVE_PROXY 에 넣으면 실시간 새로고침이 켜진다.
+
+name = "bgg-live-proxy"
+main = "worker.js"
+compatibility_date = "2026-08-01"
+
+# 관측용 로그(무료 플랜에서도 사용 가능)
+[observability]
+enabled = true

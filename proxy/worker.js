@@ -6,12 +6,15 @@
  *   그래서 브라우저에서 곧바로 fetch 하면 차단된다. 이 워커가 대신 호출해서
  *   CORS 헤더를 붙여 돌려준다. 그 이상은 아무것도 하지 않는다.
  *
- * 배포 (무료, 1~2분)
- *   1. https://dash.cloudflare.com → Workers & Pages → Create → Start with Hello World
- *   2. 편집기에 이 파일 내용을 붙여넣고 Deploy
- *   3. 발급된 주소(https://xxx.workers.dev)를 assets/config.js 의 LIVE_PROXY 에 적는다
+ * 배포
+ *   npx wrangler login
+ *   npx wrangler deploy --config proxy/wrangler.toml
  *
- *   ALLOWED_ORIGINS 를 본인 사이트 주소로 좁혀두면 남이 내 워커를 쓰는 걸 막을 수 있다.
+ *   발급된 https://bgg-live-proxy.<계정>.workers.dev 주소를
+ *   assets/config.js 의 LIVE_PROXY 에 적으면 실시간 새로고침이 켜진다.
+ *
+ *   ALLOWED_ORIGINS 에 실제 사이트 주소를 넣어야 한다. 목록에 없는 출처에서
+ *   호출하면 브라우저가 응답을 버리므로, 사이트를 배포한 뒤 주소를 추가할 것.
  */
 
 const ALLOWED_ORIGINS = [
