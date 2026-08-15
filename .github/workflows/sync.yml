@@ -1,0 +1,70 @@
+name: 데이터 동기화 & 배포
+
+on:
+  schedule:
+    # BGG 랭킹 덤프가 UTC 01:00 무렵 올라오므로 그 뒤에 돈다 (한국시간 오전 11시)
+    - cron: '0 2 * * *'
+  workflow_dispatch: # 수동 실행 버튼
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # 상세 정보(난이도/인원/메커니즘)는 자주 바뀌지 않으므로 캐시를 재사용해
+      # 매일 1500번씩 BGG를 때리지 않도록 한다. 캐시가 만료된 항목만 다시 받는다.
+      - name: 상세 캐시 복원
+        uses: actions/cache@v4
+        with:
+          path: cache/details
+          key: bgg-details-${{ github.run_id }}
+          restore-keys: bgg-details-
+
+      - name: 랭킹 스냅샷 수집
+        run: node scripts/sync-ranks.mjs
+        env:
+          LIMIT: '1500'
+
+      - name: 상세 정보 수집
+        run: node scripts/sync-details.mjs
+        env:
+          LIMIT: '1500'
+          CONCURRENCY: '4'
+
+      - name: games.json 빌드
+        run: node scripts/build.mjs
+
+      - name: 배포 아티팩트 준비
+        run: |
+          mkdir -p _site
+          cp -r index.html assets data _site/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: sync
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,17 @@
+{
+  "name": "boardgame-ranking-lab",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "BGG 데이터를 내 방식대로 정렬하는 보드게임 랭킹 사이트",
+  "scripts": {
+    "sync:ranks": "node scripts/sync-ranks.mjs",
+    "sync:details": "node scripts/sync-details.mjs",
+    "build": "node scripts/build.mjs",
+    "sync": "npm run sync:ranks && npm run sync:details && npm run build",
+    "dev": "node scripts/serve.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

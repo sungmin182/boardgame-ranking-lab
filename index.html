@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>보드게임 랭킹 랩</title>
+    <meta name="description" content="BGG 데이터를 내 방식대로 정렬하는 보드게임 랭킹 도구" />
+    <link rel="stylesheet" href="assets/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <h1>보드게임 랭킹 랩</h1>
+        <span class="stamp" id="stamp">불러오는 중…</span>
+      </div>
+      <div class="topbar-actions">
+        <input id="search" type="search" placeholder="게임명 검색 (한글/영문)" autocomplete="off" />
+        <button id="themeToggle" class="icon-btn" title="다크 모드 전환" aria-label="다크 모드 전환">◐</button>
+      </div>
+    </header>
+
+    <main>
+      <!-- ── 나만의 랭킹 점수 ───────────────────────────────── -->
+      <section class="panel" id="scorePanel">
+        <div class="panel-head">
+          <h2>나만의 랭킹 점수</h2>
+          <div class="presets" id="presets"></div>
+        </div>
+        <div class="sliders" id="sliders"></div>
+        <p class="hint">
+          각 항목의 가중치를 조절하면 표가 실시간으로 다시 정렬됩니다. 음수로 내리면 그 특성이
+          <em>적을수록</em> 높은 점수를 받습니다. 예: 인기도를 &minus;로 두면 아직 안 알려진 게임이 위로 올라옵니다.
+        </p>
+      </section>
+
+      <!-- ── 필터 ──────────────────────────────────────────── -->
+      <section class="panel" id="filterPanel">
+        <div class="panel-head">
+          <h2>필터</h2>
+          <button id="resetFilters" class="ghost-btn">필터 초기화</button>
+        </div>
+
+        <div class="filter-grid">
+          <div class="field">
+            <label>인원 <span class="sub" id="playersLabel">전체</span></label>
+            <div class="chips" id="playersChips"></div>
+            <label class="check">
+              <input type="checkbox" id="strictPlayers" />
+              <span>“베스트”로 뽑힌 인원만 (추천 제외)</span>
+            </label>
+          </div>
+
+          <div class="field">
+            <label>난이도 <span class="sub" id="weightLabel">1.0 – 5.0</span></label>
+            <div class="dual" id="weightRange"></div>
+            <div class="chips" id="weightChips"></div>
+          </div>
+
+          <div class="field">
+            <label>플레이 시간(분) <span class="sub" id="timeLabel">전체</span></label>
+            <div class="dual" id="timeRange"></div>
+            <label class="check">
+              <input type="checkbox" id="timeByMax" checked />
+              <span>최대 시간 기준으로 판정</span>
+            </label>
+          </div>
+
+          <div class="field">
+            <label>출시 연도 <span class="sub" id="yearLabel">전체</span></label>
+            <div class="dual" id="yearRange"></div>
+            <div class="chips" id="yearChips"></div>
+          </div>
+
+          <div class="field">
+            <label>BGG 순위 <span class="sub" id="rankLabel">전체</span></label>
+            <div class="dual" id="rankRange"></div>
+          </div>
+
+          <div class="field">
+            <label>평가 수 <span class="sub" id="votesLabel">전체</span></label>
+            <div class="dual" id="votesRange"></div>
+          </div>
+
+          <div class="field">
+            <label>메커니즘</label>
+            <div class="tagbox" id="mechBox"></div>
+          </div>
+
+          <div class="field">
+            <label>카테고리</label>
+            <div class="tagbox" id="catBox"></div>
+          </div>
+
+          <div class="field">
+            <label>기타</label>
+            <label class="check">
+              <input type="checkbox" id="risingOnly" />
+              <span>30일간 순위가 오른 게임만</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" id="noTextOnly" />
+              <span>게임 내 텍스트 없음 (언어 무관)</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" id="myListOnly" />
+              <span>내 목록(관심·보유)만</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" id="hideExcluded" checked />
+              <span>제외 표시한 게임 숨기기</span>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── 결과 ──────────────────────────────────────────── -->
+      <section class="panel results">
+        <div class="panel-head">
+          <h2>결과 <span class="sub" id="resultCount">–</span></h2>
+          <div class="result-actions">
+            <label class="check inline">
+              <input type="checkbox" id="compactMode" />
+              <span>간결히</span>
+            </label>
+            <button id="copyLink" class="ghost-btn">링크 복사</button>
+            <button id="exportCsv" class="ghost-btn">CSV 내보내기</button>
+          </div>
+        </div>
+
+        <div class="table-wrap" id="tableWrap">
+          <table id="table">
+            <thead>
+              <tr id="headRow"></tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+          <div id="empty" class="empty" hidden>조건에 맞는 게임이 없습니다.</div>
+        </div>
+      </section>
+    </main>
+
+    <div id="drawer" class="drawer" hidden></div>
+    <div id="toast" class="toast" hidden></div>
+
+    <script src="assets/config.js"></script>
+    <script type="module" src="assets/app.js"></script>
+  </body>
+</html>
