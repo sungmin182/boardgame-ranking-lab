@@ -28,10 +28,14 @@ export async function build() {
   const ranks = await readJson(path.join(ROOT, 'data', 'ranks.json'));
   if (!ranks) throw new Error('data/ranks.json 이 없습니다. sync-ranks.mjs 먼저 실행하세요.');
 
-  const korean = (await readJson(path.join(ROOT, 'data', 'korean-names.json'), {})) ?? {};
+  // 한글명은 BGG에 등록된 발매명을 기본으로 쓰고,
+  // data/korean-names.json 에 적힌 값이 있으면 그것으로 덮어쓴다(직접 고치기 위한 파일).
+  const overrides = (await readJson(path.join(ROOT, 'data', 'korean-names.json'), {})) ?? {};
 
   const games = [];
   let missing = 0;
+  let fromBgg = 0;
+  let fromOverride = 0;
 
   for (const r of ranks.games) {
     const d = await readJson(path.join(CACHE, `${r.id}.json`));
@@ -40,10 +44,17 @@ export async function build() {
       continue; // 상세가 없으면 난이도/인원 필터가 불가능하므로 제외
     }
 
+    const override = overrides[r.id];
+    const kor = override ?? d.korNames?.[0] ?? null;
+    if (override) fromOverride++;
+    else if (kor) fromBgg++;
+
     games.push({
       id: r.id,
       name: d.name ?? r.name,
-      kor: korean[r.id] ?? null,
+      kor,
+      // 검색용 별칭(변형판 이름 등). 대표 이름과 겹치는 것은 뺀다.
+      korAlt: (d.korNames ?? []).filter((n) => n !== kor),
       year: d.year ?? r.year,
       rank: r.rank,
       href: d.href ?? r.url,
@@ -106,6 +117,9 @@ export async function build() {
   console.log(
     `[build] data/games.json 저장 · ${games.length}개 · ${(size / 1024 / 1024).toFixed(2)}MB` +
       (missing ? ` (상세 없어 제외 ${missing}개)` : '')
+  );
+  console.log(
+    `[build] 한글명 ${fromBgg + fromOverride}개 (BGG ${fromBgg} + 직접 지정 ${fromOverride})`
   );
   return out;
 }

@@ -23,6 +23,21 @@ const n = (v) => {
   return Number.isFinite(x) ? x : null;
 };
 
+/**
+ * BGG가 갖고 있는 다른 언어 발매명 중 한글이 든 것을 추린다.
+ *
+ * 한 게임에 여러 개가 달릴 수 있다(아줄 → "아줄", "아줄 미니"). 변형판 이름은
+ * 대개 기본판 이름에 수식어가 붙은 형태라, 짧은 것을 대표 이름으로 삼는다.
+ */
+function koreanNames(item) {
+  const all = [item?.primaryname, ...(item?.alternatenames ?? [])];
+  const found = all
+    .map((n) => (typeof n === 'string' ? n : n?.name))
+    .filter((n) => n && /[가-힣]/.test(n))
+    .map((n) => n.trim());
+  return [...new Set(found)].sort((a, b) => a.length - b.length || a.localeCompare(b));
+}
+
 /** 추천 인원 투표 결과를 인원수 배열로 펼친다. [{min,max}] → [3,4] */
 function expandPlayerRanges(ranges) {
   const out = new Set();
@@ -44,7 +59,9 @@ export function normalize(id, item, dyn) {
   return {
     id: Number(id),
     name: item?.name ?? null,
-    korName: null, // 한글명은 data/korean-names.json 에서 수동/반자동으로 덧입힌다
+    // BGG에 등록된 한국어 발매명. 첫 항목을 대표로 쓰고,
+    // data/korean-names.json 에 같은 id가 있으면 그쪽이 우선한다.
+    korNames: koreanNames(item),
     year: n(item?.yearpublished),
     desc: item?.short_description ?? null,
     image: item?.images?.square200 ?? item?.imageurl ?? null,
@@ -134,5 +151,9 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   if (!ranks) throw new Error('먼저 sync-ranks.mjs를 실행하세요.');
   const limit = Number(process.env.LIMIT || 1000);
   const ids = ranks.games.slice(0, limit).map((g) => g.id);
-  await syncDetails(ids, { concurrency: Number(process.env.CONCURRENCY || 4) });
+  await syncDetails(ids, {
+    concurrency: Number(process.env.CONCURRENCY || 4),
+    // TTL_HOURS=0 으로 캐시를 무시하고 전부 새로 받을 수 있다
+    ttlHours: process.env.TTL_HOURS != null ? Number(process.env.TTL_HOURS) : 20,
+  });
 }

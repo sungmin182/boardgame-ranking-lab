@@ -169,7 +169,11 @@ function rawScore(g) {
 function matches(g, f) {
   if (f.q) {
     const q = f.q.toLowerCase();
-    if (!(g.name?.toLowerCase().includes(q) || g.kor?.toLowerCase().includes(q))) return false;
+    const hit =
+      g.name?.toLowerCase().includes(q) ||
+      g.kor?.toLowerCase().includes(q) ||
+      g.korAlt?.some((n) => n.toLowerCase().includes(q));
+    if (!hit) return false;
   }
 
   if (f.players.length) {
