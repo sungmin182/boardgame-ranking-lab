@@ -13,6 +13,15 @@ import { get, pool, readJson, writeJson, sleep } from './lib.mjs';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CACHE = path.join(ROOT, 'cache', 'details');
 
+/**
+ * 캐시 파일의 형식 버전.
+ *
+ * normalize()가 만드는 필드를 바꿀 때마다 올린다. 버전이 다른 캐시는 아직
+ * 유효기간이 남아 있어도 버리고 다시 받는다. 이게 없으면 CI가 복원한 옛 캐시
+ * 때문에 새 필드가 영영 채워지지 않는다(실제로 korNames 추가 때 그랬다).
+ */
+const SCHEMA = 2;
+
 const GEEKITEMS = (id) =>
   `https://api.geekdo.com/api/geekitems?objectid=${id}&objecttype=thing&subtype=boardgame`;
 const DYNAMIC = (id) => `https://api.geekdo.com/api/dynamicinfo?objectid=${id}&objecttype=thing`;
@@ -57,6 +66,7 @@ export function normalize(id, item, dyn) {
   const overall = (dyn?.rankinfo ?? []).find((r) => r.rankobjectid === 1 || r.subdomain === null);
 
   return {
+    schema: SCHEMA,
     id: Number(id),
     name: item?.name ?? null,
     // BGG에 등록된 한국어 발매명. 첫 항목을 대표로 쓰고,
@@ -109,7 +119,7 @@ export function normalize(id, item, dyn) {
 async function fetchDetail(id, { ttlHours }) {
   const file = path.join(CACHE, `${id}.json`);
   const cached = await readJson(file);
-  if (cached?.fetchedAt) {
+  if (cached?.fetchedAt && cached.schema === SCHEMA) {
     const ageHours = (Date.now() - Date.parse(cached.fetchedAt)) / 36e5;
     if (ageHours < ttlHours) return { detail: cached, cached: true };
   }

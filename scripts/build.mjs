@@ -121,6 +121,14 @@ export async function build() {
   console.log(
     `[build] 한글명 ${fromBgg + fromOverride}개 (BGG ${fromBgg} + 직접 지정 ${fromOverride})`
   );
+  // 상위 100위권은 대부분 정발되어 있어 BGG 한글명이 붙는다. 0에 가까우면
+  // 상세 캐시가 옛 형식이라는 뜻이다(CI 캐시 복원 사고가 실제로 있었다).
+  if (games.length > 200 && fromBgg < 50) {
+    console.warn(
+      `[build] 경고: BGG 한글명이 ${fromBgg}개뿐입니다. cache/details 가 옛 형식일 수 있습니다. ` +
+        `TTL_HOURS=0 으로 sync-details 를 다시 돌려보세요.`
+    );
+  }
   return out;
 }
 
