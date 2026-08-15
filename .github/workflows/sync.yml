@@ -39,12 +39,12 @@ jobs:
       - name: 랭킹 스냅샷 수집
         run: node scripts/sync-ranks.mjs
         env:
-          LIMIT: '1500'
+          LIMIT: '3000'
 
       - name: 상세 정보 수집
         run: node scripts/sync-details.mjs
         env:
-          LIMIT: '1500'
+          LIMIT: '3000'
           CONCURRENCY: '4'
 
       - name: games.json 빌드

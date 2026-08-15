@@ -103,11 +103,14 @@ proxy/worker.js       실시간 조회용 Cloudflare Worker (선택)
 data/korean-names.json  BGG id → 한글명 매핑 (직접 추가하는 파일)
 ```
 
-수집 개수는 환경변수로 조절한다.
+현재 상위 3000위까지 수집한다. 개수는 환경변수로 조절한다.
 
 ```bash
-LIMIT=3000 npm run sync    # 상위 3000위까지
+LIMIT=5000 npm run sync    # 상위 5000위까지
 ```
+
+바꿨다면 `.github/workflows/sync.yml`의 `LIMIT`도 같은 값으로 맞춰야
+매일 동기화가 같은 범위를 유지한다.
 
 `cache/details/`에 게임별 응답이 남아 있어 두 번째 실행부터는 20시간이 지난 항목만 다시 받는다.
 
