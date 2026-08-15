@@ -1,7 +1,9 @@
 # 보드게임 랭킹 랩
 
 BGG(BoardGameGeek) 데이터를 **내가 정한 기준으로 다시 정렬**하는 보드게임 랭킹 사이트.
-빌드 도구 없이 정적 파일로 돌아가며, GitHub Pages에 그대로 올릴 수 있다.
+빌드 도구 없이 정적 파일로 돌아간다.
+
+**사이트 → https://sungmin182.github.io/boardgame-ranking-lab/**
 
 ```
 npm run sync    # 데이터 수집 → data/games.json 생성 (첫 실행 약 8분)
@@ -131,12 +133,31 @@ LIMIT=5000 npm run sync    # 상위 5000위까지
 
 ---
 
-## 5. 배포
+## 5. 배포 (현재 구성)
 
-1. 이 폴더를 GitHub 저장소에 올린다.
-2. 저장소 Settings → Pages → Source를 **GitHub Actions**로 바꾼다.
-3. `.github/workflows/sync.yml`이 매일 한국시간 오전 11시에 데이터를 갱신하고 다시 배포한다.
-   Actions 탭에서 `Run workflow`로 즉시 실행할 수도 있다.
+| 무엇 | 어디 | 주소 |
+| --- | --- | --- |
+| 사이트 | GitHub Pages (Actions 배포) | https://sungmin182.github.io/boardgame-ranking-lab/ |
+| 실시간 조회 프록시 | Cloudflare Workers | https://bgg-live-proxy.boardgame-ranking-lab.workers.dev |
+
+`.github/workflows/sync.yml`이 매일 한국시간 오전 11시에 데이터를 갱신하고 다시 배포한다.
+Actions 탭의 `Run workflow`로 즉시 실행할 수도 있다.
+
+워커를 고쳤을 때는 다시 올려야 한다(사이트 배포와 별개다).
+
+```bash
+npx wrangler deploy --config proxy/wrangler.toml
+```
+
+사이트 주소가 바뀌면 `proxy/worker.js`의 `ALLOWED_ORIGINS`에 새 주소를 넣고 재배포할 것.
+목록에 없는 출처에서 부르면 브라우저가 응답을 버린다.
+
+### 처음부터 다시 세팅할 때
+
+1. GitHub 저장소를 만들고 푸시한다(Pages 무료 배포는 **공개 저장소**만 된다).
+2. Settings → Pages → Source를 **GitHub Actions**로 바꾼다.
+3. Cloudflare에서 workers.dev 서브도메인을 한 번 등록한 뒤 위 배포 명령을 실행한다.
+4. 발급된 주소를 `assets/config.js`의 `LIVE_PROXY`에 적는다.
 
 ---
 
