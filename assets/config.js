@@ -14,6 +14,6 @@
  *   상세 패널의 '실시간 새로고침' 버튼만 숨겨집니다.
  */
 window.LZ_CONFIG = {
-  LIVE_PROXY: '',
+  LIVE_PROXY: 'https://bgg-live-proxy.boardgame-ranking-lab.workers.dev',
   DATA_URL: 'data/games.json',
 };
