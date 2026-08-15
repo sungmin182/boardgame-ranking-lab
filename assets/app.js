@@ -67,6 +67,20 @@ const AXES = [
   },
 ];
 
+/** BGG의 언어 의존도 투표 결과를 짧은 한국어로 바꾼다 */
+const LANG_DEP = [
+  [/no necessary in-game text/i, '텍스트 없음'],
+  [/some necessary text/i, '약간의 텍스트'],
+  [/moderate in-game text/i, '보통 (요약본 필요)'],
+  [/extensive use of text/i, '텍스트 많음 (번역 필요)'],
+  [/unplayable in another language/i, '번역 없이 불가'],
+];
+
+function langDepText(raw) {
+  if (!raw) return '–';
+  return LANG_DEP.find(([re]) => re.test(raw))?.[1] ?? raw;
+}
+
 const PRESETS = {
   '긱 기본': { rating: 100, margin: 0, votes: 0, momentum: 0, fresh: 0, light: 0, owned: 0 },
   '숨은 명작': { rating: 65, margin: 45, votes: -70, momentum: 10, fresh: 0, light: 0, owned: -25 },
@@ -100,12 +114,16 @@ const DEFAULT_FILTERS = () => ({
   q: '',
 });
 
+/** 한 번에 비교할 수 있는 게임 수 */
+const COMPARE_MAX = 4;
+
 const state = {
   data: null,
   weights: { ...PRESETS['긱 기본'] },
   filters: DEFAULT_FILTERS(),
   sort: { key: 'score', dir: -1 },
   flags: JSON.parse(localStorage.getItem('lz.flags') ?? '{}'),
+  compare: [],
   rendered: 0,
   view: [],
 };
@@ -310,6 +328,268 @@ function flagButton(g, type, glyph, title) {
   return btn;
 }
 
+/** 행에 붙는 "비교 담기" 토글 */
+function compareButton(g) {
+  const on = state.compare.includes(g.id);
+  const btn = el('button', {
+    className: `flag compare-flag${on ? ' on' : ''}`,
+    textContent: '⇄',
+    title: on ? '비교에서 빼기' : '비교에 담기',
+  });
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    toggleCompare(g.id);
+  };
+  return btn;
+}
+
+function toggleCompare(id) {
+  const i = state.compare.indexOf(id);
+  if (i >= 0) {
+    state.compare.splice(i, 1);
+  } else {
+    if (state.compare.length >= COMPARE_MAX) {
+      toast(`비교는 최대 ${COMPARE_MAX}개까지 담을 수 있습니다`);
+      return;
+    }
+    state.compare.push(id);
+  }
+  refreshCompareUi();
+}
+
+function refreshCompareUi() {
+  // 이미 그려진 행의 버튼 상태만 갱신한다(표 전체를 다시 그리면 스크롤이 튄다)
+  for (const tr of document.querySelectorAll('#tbody tr')) {
+    const on = state.compare.includes(Number(tr.dataset.id));
+    const btn = tr.querySelector('.compare-flag');
+    if (btn) {
+      btn.classList.toggle('on', on);
+      btn.title = on ? '비교에서 빼기' : '비교에 담기';
+    }
+  }
+  renderCompareBar();
+  if (!$('#compareView').hidden) {
+    if (state.compare.length >= 2) openCompare();
+    else $('#compareView').hidden = true;
+  }
+}
+
+function renderCompareBar() {
+  const bar = $('#compareBar');
+  if (!state.compare.length) {
+    bar.hidden = true;
+    bar.replaceChildren();
+    return;
+  }
+  const games = state.compare.map((id) => state.data.games.find((g) => g.id === id)).filter(Boolean);
+
+  const chips = games.map((g) => {
+    const chip = el('button', {
+      className: 'compare-chip',
+      title: '빼기',
+    });
+    chip.append(
+      g.thumb ? el('img', { src: g.thumb, alt: '' }) : null,
+      el('span', { textContent: g.kor ?? g.name ?? '' }),
+      el('b', { textContent: '×' })
+    );
+    chip.onclick = () => toggleCompare(g.id);
+    return chip;
+  });
+
+  const open = el('button', {
+    className: 'preset-btn on',
+    textContent: `${games.length}개 비교하기`,
+  });
+  open.onclick = openCompare;
+
+  const clear = el('button', { className: 'ghost-btn', textContent: '비우기' });
+  clear.onclick = () => {
+    state.compare = [];
+    refreshCompareUi();
+  };
+
+  bar.replaceChildren(el('span', { className: 'sub', textContent: '비교함' }), ...chips, open, clear);
+  bar.hidden = false;
+}
+
+/* ── 비교 화면 ────────────────────────────────────────── */
+
+/** 여러 게임의 순위 추이를 한 좌표계에 겹쳐 그린다 */
+function compareSpark(games, colors) {
+  const series = games.map((g) => {
+    const pts = [];
+    for (const off of [365, 30, 7]) {
+      const d = g.delta?.[off];
+      if (d?.rank != null) pts.push({ x: -off, rank: g.rank + d.rank });
+    }
+    pts.push({ x: 0, rank: g.rank });
+    return pts;
+  });
+  const all = series.flat().map((p) => p.rank);
+  if (all.length < 2) return null;
+
+  const W = 700;
+  const H = 150;
+  const PAD = { l: 42, r: 10, t: 12, b: 20 };
+  const lo = Math.min(...all);
+  const hi = Math.max(...all);
+  const span = hi - lo || 1;
+  const px = (x) => PAD.l + ((x + 365) / 365) * (W - PAD.l - PAD.r);
+  const py = (rank) => PAD.t + ((rank - lo) / span) * (H - PAD.t - PAD.b); // 순위는 작을수록 위
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('class', 'compare-spark');
+
+  const parts = [
+    `<line x1="${PAD.l}" y1="${PAD.t}" x2="${PAD.l}" y2="${H - PAD.b}" stroke="var(--border)"/>`,
+    `<text x="${PAD.l - 6}" y="${PAD.t + 4}" font-size="10" text-anchor="end" fill="var(--text-dim)">${lo}위</text>`,
+    `<text x="${PAD.l - 6}" y="${H - PAD.b}" font-size="10" text-anchor="end" fill="var(--text-dim)">${hi}위</text>`,
+    `<text x="${PAD.l}" y="${H - 5}" font-size="10" fill="var(--text-dim)">1년 전</text>`,
+    `<text x="${W - PAD.r}" y="${H - 5}" font-size="10" text-anchor="end" fill="var(--text-dim)">현재</text>`,
+  ];
+
+  series.forEach((pts, i) => {
+    if (pts.length < 2) return;
+    const d = pts
+      .map((p, j) => `${j ? 'L' : 'M'}${px(p.x).toFixed(1)},${py(p.rank).toFixed(1)}`)
+      .join(' ');
+    parts.push(`<path d="${d}" fill="none" stroke="${colors[i]}" stroke-width="2.5" stroke-linejoin="round"/>`);
+    for (const p of pts) {
+      parts.push(`<circle cx="${px(p.x).toFixed(1)}" cy="${py(p.rank).toFixed(1)}" r="3.5" fill="${colors[i]}"/>`);
+    }
+  });
+
+  svg.innerHTML = parts.join('');
+  return svg;
+}
+
+/** 숫자 행에서 가장 좋은 값에 표시를 남긴다. better: 'high' | 'low' */
+function bestIndexes(values, better) {
+  const nums = values.filter((v) => v != null && Number.isFinite(v));
+  if (nums.length < 2) return new Set();
+  // 전부 같은 값이면 우열이 없으므로 아무것도 표시하지 않는다
+  if (Math.min(...nums) === Math.max(...nums)) return new Set();
+  const target = better === 'low' ? Math.min(...nums) : Math.max(...nums);
+  const set = new Set();
+  values.forEach((v, i) => {
+    if (v === target) set.add(i);
+  });
+  return set;
+}
+
+function openCompare() {
+  const games = state.compare.map((id) => state.data.games.find((g) => g.id === id)).filter(Boolean);
+  const view = $('#compareView');
+  if (games.length < 2) {
+    toast('비교하려면 2개 이상 담아주세요');
+    view.hidden = true;
+    return;
+  }
+
+  const colors = ['#2f6f4e', '#b3402f', '#2f5f9e', '#8a6d1f'];
+
+  const close = el('button', { className: 'close', textContent: '×', title: '닫기' });
+  close.onclick = () => (view.hidden = true);
+
+  // 헤더: 게임 카드
+  const head = el('div', { className: 'compare-head' });
+  games.forEach((g, i) => {
+    const card = el(
+      'div',
+      { className: 'compare-card' },
+      el('div', { className: 'swatch', style: `background:${colors[i]}` }),
+      g.image ? el('img', { src: g.image, alt: '', loading: 'lazy' }) : null,
+      el('b', { textContent: g.kor ?? g.name ?? '' }),
+      el('small', { textContent: `${g.rank}위 · ${g.year ?? ''}` })
+    );
+    head.append(card);
+  });
+
+  // 스펙 비교표
+  const ROWS = [
+    { label: '내 점수', get: (g) => g._score100, fmt: (v) => v?.toFixed(1), better: 'high' },
+    { label: 'BGG 순위', get: (g) => g.rank, fmt: (v) => `${v}위`, better: 'low' },
+    { label: 'BGG 평점', get: (g) => g.bayes, fmt: (v) => v?.toFixed(2), better: 'high' },
+    { label: '유저 평점', get: (g) => g.average, fmt: (v) => v?.toFixed(2), better: 'high' },
+    { label: '평점 차이', get: (g) => g.margin, fmt: (v) => v?.toFixed(2), better: 'high' },
+    { label: '평가 수', get: (g) => g.votes, fmt: (v) => fmt(v), better: 'high' },
+    { label: '난이도', get: (g) => g.weight, fmt: (v) => `${v?.toFixed(2)} / 5`, better: null },
+    { label: '추천 인원', get: () => null, text: (g) => playersText(g) },
+    { label: '전체 인원', get: () => null, text: (g) => `${g.minPlayers}–${g.maxPlayers}명` },
+    {
+      label: '플레이 시간',
+      get: (g) => g.maxTime,
+      fmt: (v) => `${v}분`,
+      text: (g) => (g.minTime === g.maxTime ? `${g.maxTime}분` : `${g.minTime}–${g.maxTime}분`),
+      better: 'low',
+    },
+    { label: '연령', get: (g) => g.minAge, fmt: (v) => `${v}세+`, better: 'low' },
+    { label: '언어 의존', get: () => null, text: (g) => langDepText(g.langDep) },
+    { label: '보유자 수', get: (g) => g.owned, fmt: (v) => fmt(v), better: 'high' },
+    { label: '위시리스트', get: (g) => g.wishing, fmt: (v) => fmt(v), better: 'high' },
+    {
+      label: '30일 순위 변동',
+      get: (g) => g.delta?.[30]?.rank,
+      fmt: (v) => (v > 0 ? `▲ ${v}` : v < 0 ? `▼ ${Math.abs(v)}` : '–'),
+      better: 'high',
+    },
+    {
+      label: '1년 순위 변동',
+      get: (g) => g.delta?.[365]?.rank,
+      fmt: (v) => (v > 0 ? `▲ ${v}` : v < 0 ? `▼ ${Math.abs(v)}` : '–'),
+      better: 'high',
+    },
+  ];
+
+  const table = el('table', { className: 'compare-table' });
+  const tb = el('tbody');
+  for (const row of ROWS) {
+    const values = games.map(row.get);
+    const best = row.better ? bestIndexes(values, row.better) : new Set();
+    const tr = el('tr', {}, el('th', { textContent: row.label }));
+    games.forEach((g, i) => {
+      const text = row.text ? row.text(g) : values[i] == null ? '–' : row.fmt(values[i]);
+      tr.append(el('td', { className: best.has(i) ? 'best' : '', textContent: text }));
+    });
+    tb.append(tr);
+  }
+  table.append(tb);
+
+  // 공통점과 차이점
+  const mechSets = games.map((g) => new Set(g.mechanics ?? []));
+  const shared = [...(mechSets[0] ?? [])].filter((m) => mechSets.every((s) => s.has(m)));
+  const uniqueBlocks = games.map((g, i) => {
+    const own = (g.mechanics ?? []).filter((m) => !mechSets.some((s, j) => j !== i && s.has(m)));
+    return el(
+      'div',
+      { className: 'compare-unique' },
+      el('div', { className: 'sub' }, el('span', { className: 'dot', style: `background:${colors[i]}` }), ` ${g.kor ?? g.name} 에만 있는 메커니즘`),
+      own.length
+        ? el('div', { className: 'taglist' }, ...own.map((m) => el('span', { textContent: m })))
+        : el('div', { className: 'sub', textContent: '없음' })
+    );
+  });
+
+  view.replaceChildren(
+    el('div', { className: 'compare-inner' },
+      close,
+      el('h2', { textContent: '게임 비교' }),
+      head,
+      el('div', { className: 'compare-scroll' }, table),
+      el('h3', { textContent: '순위 추이 (최근 1년)' }),
+      compareSpark(games, colors) ?? el('p', { className: 'sub', textContent: '비교할 순위 기록이 부족합니다.' }),
+      el('h3', { textContent: '공통 메커니즘' }),
+      shared.length
+        ? el('div', { className: 'taglist' }, ...shared.map((m) => el('span', { textContent: m })))
+        : el('p', { className: 'sub', textContent: '겹치는 메커니즘이 없습니다.' }),
+      ...uniqueBlocks
+    )
+  );
+  view.hidden = false;
+}
+
 function renderMore() {
   const tbody = $('#tbody');
   const slice = state.view.slice(state.rendered, state.rendered + CHUNK);
@@ -338,10 +618,11 @@ function renderMore() {
           ),
           el(
             'span',
-            {},
+            { className: 'row-actions' },
             flagButton(g, 'want', '★', '관심'),
             flagButton(g, 'own', '●', '보유'),
-            flagButton(g, 'skip', '✕', '제외')
+            flagButton(g, 'skip', '✕', '제외'),
+            compareButton(g)
           )
         )
       ),
@@ -440,7 +721,7 @@ function openDrawer(g) {
   add('인원', `${g.minPlayers}–${g.maxPlayers}명 · 추천 ${playersText(g)}`);
   add('시간', g.maxTime ? `${g.minTime}–${g.maxTime}분` : '–');
   add('연령', g.minAge ? `${g.minAge}세+` : '–');
-  add('언어 의존', g.langDep ?? '–');
+  add('언어 의존', langDepText(g.langDep));
   add('보유 / 위시', `${fmt(g.owned)} / ${fmt(g.wishing)}`);
   for (const off of [7, 30, 365]) {
     const dd = g.delta?.[off];
@@ -936,7 +1217,10 @@ async function main() {
   };
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') $('#drawer').hidden = true;
+    if (e.key === 'Escape') {
+      if (!$('#compareView').hidden) $('#compareView').hidden = true;
+      else $('#drawer').hidden = true;
+    }
     if (e.key === '/' && document.activeElement !== $('#search')) {
       e.preventDefault();
       $('#search').focus();
