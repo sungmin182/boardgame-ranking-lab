@@ -569,53 +569,69 @@ function renderCompareBar() {
 
 /* ── 비교 화면 ────────────────────────────────────────── */
 
-/** 여러 게임의 순위 추이를 한 좌표계에 겹쳐 그린다 */
+/** 여러 게임의 5년 순위 추이를 한 좌표계에 겹쳐 그린다 */
 function compareSpark(games, colors) {
-  const series = games.map((g) => {
-    const pts = [];
-    for (const off of [365, 30, 7]) {
-      const d = g.delta?.[off];
-      if (d?.rank != null) pts.push({ x: -off, rank: g.rank + d.rank });
-    }
-    pts.push({ x: 0, rank: g.rank });
-    return pts;
-  });
+  const dates = state.data.histDates ?? [];
+  const series = games.map((g) => historyPoints(g, dates));
   const all = series.flat().map((p) => p.rank);
   if (all.length < 2) return null;
 
   const W = 700;
-  const H = 150;
-  const PAD = { l: 42, r: 10, t: 12, b: 20 };
+  const H = 170;
+  const PAD = { l: 46, r: 14, t: 14, b: 26 };
   const lo = Math.min(...all);
   const hi = Math.max(...all);
-  const span = hi - lo || 1;
-  const px = (x) => PAD.l + ((x + 365) / 365) * (W - PAD.l - PAD.r);
-  const py = (rank) => PAD.t + ((rank - lo) / span) * (H - PAD.t - PAD.b); // 순위는 작을수록 위
+  const px = (i) => PAD.l + (i / (dates.length - 1)) * (W - PAD.l - PAD.r);
+  const py = rankScale(lo, hi, PAD.t, H - PAD.b); // 순위는 작을수록 위
 
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  svg.setAttribute('class', 'compare-spark');
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, class: 'compare-spark' });
 
-  const parts = [
-    `<line x1="${PAD.l}" y1="${PAD.t}" x2="${PAD.l}" y2="${H - PAD.b}" stroke="var(--border)"/>`,
-    `<text x="${PAD.l - 6}" y="${PAD.t + 4}" font-size="10" text-anchor="end" fill="var(--text-dim)">${lo}위</text>`,
-    `<text x="${PAD.l - 6}" y="${H - PAD.b}" font-size="10" text-anchor="end" fill="var(--text-dim)">${hi}위</text>`,
-    `<text x="${PAD.l}" y="${H - 5}" font-size="10" fill="var(--text-dim)">1년 전</text>`,
-    `<text x="${W - PAD.r}" y="${H - 5}" font-size="10" text-anchor="end" fill="var(--text-dim)">현재</text>`,
-  ];
+  // 로그 척도라 가운데 눈금이 없으면 읽기 어렵다
+  const mid = Math.round(10 ** ((Math.log10(Math.max(1, lo)) + Math.log10(Math.max(1, hi))) / 2));
+  const ticks = hi / Math.max(1, lo) >= 20 ? [lo, mid, hi] : [lo, hi];
+
+  for (const rank of ticks) {
+    const y = py(rank);
+    svg.append(
+      svgEl('line', { x1: PAD.l, y1: y, x2: W - PAD.r, y2: y, class: 'chart-grid' }),
+      Object.assign(svgEl('text', { x: PAD.l - 7, y: y + 3, class: 'chart-tick', 'text-anchor': 'end' }), {
+        textContent: `${rank}위`,
+      })
+    );
+  }
+
+  let lastYear = '';
+  for (const p of series.flat().sort((a, b) => a.i - b.i)) {
+    const year = p.date.slice(0, 4);
+    if (year !== lastYear) {
+      lastYear = year;
+      svg.append(
+        Object.assign(
+          svgEl('text', { x: px(p.i), y: H - 8, class: 'chart-tick', 'text-anchor': 'middle' }),
+          { textContent: year }
+        )
+      );
+    }
+  }
 
   series.forEach((pts, i) => {
     if (pts.length < 2) return;
-    const d = pts
-      .map((p, j) => `${j ? 'L' : 'M'}${px(p.x).toFixed(1)},${py(p.rank).toFixed(1)}`)
-      .join(' ');
-    parts.push(`<path d="${d}" fill="none" stroke="${colors[i]}" stroke-width="2.5" stroke-linejoin="round"/>`);
+    svg.append(
+      svgEl('path', {
+        d: pts.map((p, j) => `${j ? 'L' : 'M'}${px(p.i).toFixed(1)},${py(p.rank).toFixed(1)}`).join(' '),
+        fill: 'none',
+        stroke: colors[i],
+        'stroke-width': 2.5,
+        'stroke-linejoin': 'round',
+      })
+    );
     for (const p of pts) {
-      parts.push(`<circle cx="${px(p.x).toFixed(1)}" cy="${py(p.rank).toFixed(1)}" r="3.5" fill="${colors[i]}"/>`);
+      svg.append(
+        svgEl('circle', { cx: px(p.i).toFixed(1), cy: py(p.rank).toFixed(1), r: 3, fill: colors[i] })
+      );
     }
   });
 
-  svg.innerHTML = parts.join('');
   return svg;
 }
 
@@ -827,36 +843,151 @@ function renderHead() {
 }
 
 /* ── 상세 서랍 ────────────────────────────────────────── */
-function sparkline(g) {
-  // 365 / 30 / 7일 전 순위와 현재 순위를 잇는 미니 그래프
-  const pts = [];
-  for (const off of [365, 30, 7]) {
-    const d = g.delta?.[off];
-    if (d?.rank != null) pts.push({ x: -off, rank: g.rank + d.rank });
-  }
-  pts.push({ x: 0, rank: g.rank });
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const svgEl = (tag, attrs = {}) => {
+  const n = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  return n;
+};
+
+/** 'YYYY-MM-DD' → '2024년 8월' */
+function ymLabel(date) {
+  const [y, m] = date.split('-');
+  return `${y}년 ${Number(m)}월`;
+}
+
+/** hist 배열과 날짜를 짝지어 값이 있는 점만 남긴다 */
+function historyPoints(g, dates) {
+  const hist = g.hist ?? [];
+  return dates
+    .map((date, i) => ({ i, date, rank: hist[i] }))
+    .filter((p) => p.rank != null && p.rank > 0);
+}
+
+/**
+ * 순위를 세로 좌표로 바꾸는 함수를 만든다.
+ *
+ * 로그 척도를 쓴다. 순위는 1위와 5위의 차이가 3000위와 3004위의 차이보다
+ * 훨씬 크기 때문이다. 신작이 16000위에서 시작하면 선형 척도에서는 상위권
+ * 구간이 한 줄로 뭉개져 아무것도 읽을 수 없다.
+ * 범위가 좁을 때는 선형과 거의 같게 나오므로 손해가 없다.
+ */
+function rankScale(lo, hi, top, bottom) {
+  const a = Math.log10(Math.max(1, lo));
+  const b = Math.log10(Math.max(1, hi));
+  const span = b - a || 1;
+  return (rank) => top + ((Math.log10(Math.max(1, rank)) - a) / span) * (bottom - top);
+}
+
+/**
+ * 5년 순위 추이 그래프.
+ * 점에 마우스를 올리면 그 시점의 순위를 보여준다.
+ */
+function rankChart(g) {
+  const dates = state.data.histDates ?? [];
+  const pts = historyPoints(g, dates);
   if (pts.length < 2) return null;
 
-  const W = 380;
-  const H = 56;
+  const W = 700;
+  const H = 170;
+  const PAD = { l: 46, r: 14, t: 14, b: 26 };
   const ranks = pts.map((p) => p.rank);
   const lo = Math.min(...ranks);
   const hi = Math.max(...ranks);
-  const span = hi - lo || 1;
-  const xs = pts.map((p) => ((p.x + 365) / 365) * (W - 8) + 4);
-  // 순위는 작을수록 위
-  const ys = pts.map((p) => ((p.rank - lo) / span) * (H - 16) + 8);
-  const path = xs.map((x, i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ');
 
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  svg.setAttribute('class', 'spark');
-  svg.innerHTML =
-    `<path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>` +
-    xs.map((x, i) => `<circle cx="${x.toFixed(1)}" cy="${ys[i].toFixed(1)}" r="3" fill="var(--accent)"/>`).join('') +
-    `<text x="4" y="${H - 1}" font-size="9" fill="var(--text-dim)">1년 전 ${pts[0].rank}위</text>` +
-    `<text x="${W - 4}" y="${H - 1}" font-size="9" text-anchor="end" fill="var(--text-dim)">현재 ${g.rank}위</text>`;
-  return svg;
+  const px = (i) => PAD.l + (i / (dates.length - 1)) * (W - PAD.l - PAD.r);
+  const py = rankScale(lo, hi, PAD.t, H - PAD.b); // 낮은 순위가 위
+
+  const wrap = el('div', { className: 'chart-wrap' });
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, class: 'rank-chart' });
+
+  // 위아래 기준선과 눈금
+  for (const [rank, anchor] of [
+    [lo, 'top'],
+    [hi, 'bottom'],
+  ]) {
+    const y = py(rank);
+    svg.append(
+      svgEl('line', { x1: PAD.l, y1: y, x2: W - PAD.r, y2: y, class: 'chart-grid' }),
+      Object.assign(svgEl('text', { x: PAD.l - 7, y: y + 3, class: 'chart-tick', 'text-anchor': 'end' }), {
+        textContent: `${rank}위`,
+      })
+    );
+    void anchor;
+  }
+
+  // 연도 눈금 (1월이 들어 있는 표본에만)
+  let lastYear = '';
+  for (const p of pts) {
+    const year = p.date.slice(0, 4);
+    if (year !== lastYear) {
+      lastYear = year;
+      svg.append(
+        Object.assign(
+          svgEl('text', { x: px(p.i), y: H - 8, class: 'chart-tick', 'text-anchor': 'middle' }),
+          { textContent: year }
+        )
+      );
+    }
+  }
+
+  svg.append(
+    svgEl('path', {
+      d: pts.map((p, k) => `${k ? 'L' : 'M'}${px(p.i).toFixed(1)},${py(p.rank).toFixed(1)}`).join(' '),
+      class: 'chart-line',
+    })
+  );
+
+  for (const p of pts) {
+    svg.append(svgEl('circle', { cx: px(p.i).toFixed(1), cy: py(p.rank).toFixed(1), r: 3.5, class: 'chart-dot' }));
+  }
+
+  // 마우스를 따라다니는 세로선과 강조점
+  const cross = svgEl('line', { y1: PAD.t, y2: H - PAD.b, class: 'chart-cross', visibility: 'hidden' });
+  const focus = svgEl('circle', { r: 5.5, class: 'chart-focus', visibility: 'hidden' });
+  svg.append(cross, focus);
+
+  const tip = el('div', { className: 'chart-tip', hidden: true });
+  wrap.append(svg, tip);
+
+  const show = (clientX) => {
+    const rect = svg.getBoundingClientRect();
+    const x = ((clientX - rect.left) / rect.width) * W;
+    // x가 가장 가까운 표본을 고른다
+    let best = pts[0];
+    for (const p of pts) {
+      if (Math.abs(px(p.i) - x) < Math.abs(px(best.i) - x)) best = p;
+    }
+    const cx = px(best.i);
+    const cy = py(best.rank);
+    cross.setAttribute('x1', cx);
+    cross.setAttribute('x2', cx);
+    cross.setAttribute('visibility', 'visible');
+    focus.setAttribute('cx', cx);
+    focus.setAttribute('cy', cy);
+    focus.setAttribute('visibility', 'visible');
+
+    tip.textContent = `${ymLabel(best.date)} · ${best.rank}위`;
+    tip.hidden = false;
+    // 말풍선이 그래프 밖으로 나가지 않게 붙잡는다
+    const ratio = rect.width / W;
+    const left = Math.max(4, Math.min(cx * ratio - tip.offsetWidth / 2, rect.width - tip.offsetWidth - 4));
+    tip.style.left = `${left}px`;
+    tip.style.top = `${Math.max(0, cy * ratio - 34)}px`;
+  };
+
+  const hide = () => {
+    cross.setAttribute('visibility', 'hidden');
+    focus.setAttribute('visibility', 'hidden');
+    tip.hidden = true;
+  };
+
+  svg.addEventListener('pointermove', (e) => show(e.clientX));
+  svg.addEventListener('pointerleave', hide);
+  // 손가락으로도 짚어볼 수 있게
+  svg.addEventListener('pointerdown', (e) => show(e.clientX));
+
+  return wrap;
 }
 
 /* ── BGG 리뷰 ─────────────────────────────────────────────
@@ -1245,7 +1376,8 @@ function openDrawer(g) {
     actions,
     liveBox,
     kv,
-    sparkline(g),
+    el('div', { className: 'sub', style: 'margin-top:14px' }, '순위 추이 (최근 5년)'),
+    rankChart(g) ?? el('p', { className: 'sub', textContent: '순위 기록이 부족합니다.' }),
     tags('메커니즘', g.mechanics),
     tags('카테고리', g.categories),
     tags('디자이너', g.designers),

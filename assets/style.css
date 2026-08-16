@@ -1094,13 +1094,68 @@ body.resizing {
   border: 1px solid var(--border);
 }
 
-.spark {
+/* ── 순위 추이 그래프 ───────────────────────────────────── */
+.chart-wrap {
+  position: relative;
+  margin-top: 6px;
+}
+
+.rank-chart {
+  display: block;
   width: 100%;
   height: auto;
-  margin-top: 6px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
+  touch-action: none;
+}
+
+.chart-grid {
+  stroke: var(--border);
+  stroke-dasharray: 3 3;
+}
+
+.chart-tick {
+  fill: var(--text-dim);
+  font-size: 10px;
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart-dot {
+  fill: var(--accent);
+}
+
+.chart-cross {
+  stroke: var(--text-dim);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+/* 짚은 점은 바탕색 테두리를 둘러 선 위에서도 또렷하게 */
+.chart-focus {
+  fill: var(--accent);
+  stroke: var(--surface-2);
+  stroke-width: 2;
+}
+
+.chart-tip {
+  position: absolute;
+  padding: 4px 9px;
+  border-radius: 7px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 2;
 }
 
 .drawer-actions {

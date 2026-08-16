@@ -95,6 +95,8 @@ export async function build() {
 
       // 변화량
       delta: r.delta,
+      // 5년 순위 추이. 날짜는 최상위 histDates 와 같은 순서다.
+      hist: r.hist,
     });
   }
 
@@ -102,6 +104,7 @@ export async function build() {
     date: ranks.date,
     builtAt: new Date().toISOString(),
     offsets: OFFSETS,
+    histDates: ranks.histDates ?? [],
     count: games.length,
     facets: {
       mechanics: facet(games, 'mechanics'),

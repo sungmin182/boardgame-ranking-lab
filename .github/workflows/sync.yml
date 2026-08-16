@@ -29,12 +29,16 @@ jobs:
 
       # 상세 정보(난이도/인원/메커니즘)는 자주 바뀌지 않으므로 캐시를 재사용해
       # 매일 1500번씩 BGG를 때리지 않도록 한다. 캐시가 만료된 항목만 다시 받는다.
-      - name: 상세 캐시 복원
+      # 순위 스냅샷 CSV 도 함께 캐시한다. 5년 추이용으로 분기마다 한 개씩,
+      # 21개(개당 5~7MB)를 쓰기 때문에 매번 새로 받으면 낭비가 크다.
+      - name: 캐시 복원
         uses: actions/cache@v4
         with:
-          path: cache/details
-          key: bgg-details-${{ github.run_id }}
-          restore-keys: bgg-details-
+          path: |
+            cache/details
+            cache/ranks
+          key: bgg-cache-${{ github.run_id }}
+          restore-keys: bgg-cache-
 
       - name: 랭킹 스냅샷 수집
         run: node scripts/sync-ranks.mjs

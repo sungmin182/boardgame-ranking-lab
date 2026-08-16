@@ -13,8 +13,27 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CACHE = path.join(ROOT, 'cache', 'ranks');
 const RAW = 'https://raw.githubusercontent.com/beefsack/bgg-ranking-historicals/master';
 
-/** 과거 스냅샷과의 비교 구간(일) */
+/** 과거 스냅샷과의 비교 구간(일). 표의 변동 열과 상승세 점수에 쓴다. */
 export const OFFSETS = [7, 30, 365];
+
+/**
+ * 순위 추이 그래프용 표본.
+ *
+ * CSV 한 개가 5~7MB라 월 단위(60개)는 내려받는 양이 과하다. 분기 단위로 5년,
+ * 즉 21개면 작은 그래프에서 추세를 읽기에 충분하다.
+ */
+const HISTORY_MONTHS = 60;
+const HISTORY_STEP_MONTHS = 3;
+
+function historyTargets(baseDate) {
+  const out = [];
+  for (let m = HISTORY_MONTHS; m >= 0; m -= HISTORY_STEP_MONTHS) {
+    const d = new Date(`${baseDate}T00:00:00Z`);
+    d.setUTCMonth(d.getUTCMonth() - m);
+    out.push(ymd(d));
+  }
+  return out;
+}
 
 async function fetchSnapshot(date) {
   const file = path.join(CACHE, `${date}.csv`);
@@ -97,6 +116,25 @@ export async function syncRanks({ limit = 1500 } = {}) {
     .sort((a, b) => a.rank - b.rank)
     .slice(0, limit);
 
+  // ── 5년 추이 ──────────────────────────────────────────
+  // 날짜는 게임마다 같으므로 위쪽에 한 번만 두고, 게임에는 순위 배열만 담는다.
+  // (3000개 × 21점을 객체로 담으면 파일이 몇 배로 불어난다)
+  const histDates = [];
+  const histMaps = [];
+  for (const target of historyTargets(today.date)) {
+    const snap = await fetchNearest(target);
+    if (!snap) continue;
+    if (histDates.includes(snap.date)) continue; // 같은 스냅샷이 두 번 잡히는 경우
+    histDates.push(snap.date);
+    histMaps.push(index(snap.rows));
+  }
+  console.log(`[ranks] 추이 표본 ${histDates.length}개 (${histDates[0]} ~ ${histDates.at(-1)})`);
+
+  for (const g of games) {
+    const id = String(g.id);
+    g.hist = histMaps.map((m) => m.get(id)?.rank ?? null);
+  }
+
   for (const g of games) {
     const id = String(g.id);
     g.delta = {};
@@ -116,9 +154,9 @@ export async function syncRanks({ limit = 1500 } = {}) {
     }
   }
 
-  await writeJson(path.join(ROOT, 'data', 'ranks.json'), { date: today.date, games });
+  await writeJson(path.join(ROOT, 'data', 'ranks.json'), { date: today.date, histDates, games });
   console.log(`[ranks] data/ranks.json 저장 (${games.length}개)`);
-  return { date: today.date, games };
+  return { date: today.date, histDates, games };
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
