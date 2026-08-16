@@ -1745,7 +1745,16 @@ function openDrawer(g) {
           el('div', { className: 'taglist' }, ...g.subranks.map((s) => el('span', { textContent: `${s.name} ${s.rank}위` })))
         )
       : null,
-    reviewSection
+    reviewSection,
+    (() => {
+      // 내용이 길어 한참 내려온 뒤에도 바로 닫을 수 있게
+      const b = el('button', { className: 'drawer-close-bottom', textContent: '닫기' });
+      b.onclick = () => {
+        d.hidden = true;
+        clearOpen();
+      };
+      return b;
+    })()
   );
 
   if (CONFIG.LIVE_PROXY) loadReviews(g, reviewBox);
@@ -3336,8 +3345,12 @@ async function main() {
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      if (!$('#compareView').hidden) $('#compareView').hidden = true;
-      else $('#drawer').hidden = true;
+      // 위에 떠 있는 것부터 닫는다 (상세 80 > 서재·비교 70)
+      if (!$('#drawer').hidden) {
+        $('#drawer').hidden = true;
+        document.querySelectorAll('#tableWrap .open').forEach((r) => r.classList.remove('open'));
+      } else if (!$('#shelfView').hidden) $('#shelfView').hidden = true;
+      else if (!$('#compareView').hidden) $('#compareView').hidden = true;
     }
     if (e.key === '/' && document.activeElement !== $('#search')) {
       e.preventDefault();

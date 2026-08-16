@@ -1213,13 +1213,26 @@ tbody tr:hover .row-actions,
   scrollbar-width: thin;
 }
 
-/* 왼쪽 모서리의 폭 조절 손잡이 */
+/*
+ * 왼쪽 모서리의 폭 조절 손잡이.
+ *
+ * absolute 로 두면 스크롤 컨테이너인 서랍의 "내용"에 붙어 함께 밀려 올라간다.
+ * 그래서 조금만 내려도 손잡이가 화면 밖으로 사라져 맨 위에서만 잡을 수 있었다.
+ * fixed 로 두면 서랍의 보이는 영역에 고정된다(.drawer 가 container-type 을 갖고
+ * 있어 고정 기준이 서랍 자신이 된다). 이제 어느 위치에서든 잡힌다.
+ */
 .drawer-resizer {
-  position: absolute;
-  left: 0;
+  position: fixed;
+  /*
+   * left:0 으로 두면 화면 왼쪽 끝에 붙는다. container-type 이 고정 위치의
+   * 기준을 만들어 줄 것 같지만 실제로는 contain 이 none 이라 그렇지 않다.
+   * 서랍은 화면 오른쪽에 붙어 있으므로, 오른쪽에서 서랍 폭만큼 떨어진 곳이
+   * 서랍의 왼쪽 모서리다. 손잡이는 그 안쪽 14px 를 차지한다.
+   */
+  right: calc(min(var(--drawer-w, 450px), 100vw) - 14px);
   top: 0;
   bottom: 0;
-  width: 10px;
+  width: 14px;
   cursor: col-resize;
   touch-action: none;
   z-index: 5;
@@ -1258,8 +1271,10 @@ body.resizing {
   padding-right: 30px;
 }
 
+/* 닫기 버튼도 서랍의 보이는 영역에 고정한다.
+   내용에 붙여 두면 아래로 내려간 뒤 닫으려고 맨 위까지 되올라가야 한다. */
 .drawer .close {
-  position: absolute;
+  position: fixed;
   top: 13px;
   right: 15px;
   width: 28px;
@@ -1271,6 +1286,31 @@ body.resizing {
   font-size: 19px;
   cursor: pointer;
   line-height: 1;
+  z-index: 6;
+  box-shadow: var(--shadow-sm);
+}
+
+/* 맨 아래에서도 닫을 수 있게 — 긴 내용을 다 읽고 나서 위로 올라가지 않아도 된다 */
+.drawer-close-bottom {
+  display: block;
+  width: 100%;
+  margin-top: 22px;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.14s;
+}
+
+.drawer-close-bottom:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .drawer .close:hover {
