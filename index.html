@@ -148,6 +148,14 @@
               <span>내 목록(관심·보유)만</span>
             </label>
             <label class="check">
+              <input type="checkbox" id="notPlayedOnly" />
+              <span title="구입 기록이 있는데 플레이 기록이 없는 게임">사놓고 한 번도 안 한 것만</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" id="ratedOnly" />
+              <span>내가 평점을 매긴 것만</span>
+            </label>
+            <label class="check">
               <input type="checkbox" id="hideExcluded" checked />
               <span>제외 표시한 게임 숨기기</span>
             </label>
@@ -178,9 +186,14 @@
               <button data-view="cards">카드</button>
             </div>
             <label class="check inline">
+              <input type="checkbox" id="showNotes" />
+              <span title="내 평점 · 플레이 수 · 1판당 비용 열">내 기록</span>
+            </label>
+            <label class="check inline">
               <input type="checkbox" id="compactMode" />
               <span>간결히</span>
             </label>
+            <button id="myShelf" class="ghost-btn">내 서재</button>
             <button id="copyLink" class="ghost-btn">링크 복사</button>
             <button id="exportCsv" class="ghost-btn">CSV 내보내기</button>
           </div>
@@ -212,6 +225,9 @@
     <!-- 비교 담기 바 / 비교 화면 -->
     <div id="compareBar" class="compare-bar" hidden></div>
     <div id="compareView" class="compare-view" hidden></div>
+
+    <!-- 내 기록 요약 (투자·플레이·먼지 쌓인 게임·백업) -->
+    <div id="shelfView" class="compare-view" hidden></div>
 
     <div id="modal" class="modal" hidden></div>
     <div id="toast" class="toast" hidden></div>

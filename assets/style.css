@@ -1166,6 +1166,8 @@ tbody tr:hover .row-actions,
   top: 0;
   bottom: 0;
   width: min(var(--drawer-w, 450px), 100vw);
+  /* 안쪽 요소(플레이 기록 줄)가 패널 폭에 맞춰 배치를 바꾸도록 컨테이너로 삼는다 */
+  container-type: inline-size;
   background: var(--surface);
   border-left: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
@@ -2002,6 +2004,243 @@ body.resizing {
 .card-stats i {
   font-style: normal;
   color: var(--text-dim);
+}
+
+/* ── 내 기록 ────────────────────────────────────────────── */
+.my-rating {
+  display: inline-block;
+  min-width: 34px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.note-section {
+  margin-top: 16px;
+  padding: 13px 14px 15px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.note-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.note-head h4 {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* 기록에서 바로 나오는 지표들 (1판당 비용, 손익 …) */
+.note-chips {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.note-chips span {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.note-label {
+  margin: 12px 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+  letter-spacing: 0.02em;
+}
+
+.note-label.with-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.note-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 8px;
+}
+
+.note-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.note-field span {
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+.note-field input,
+.note-memo,
+.play-row input {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.note-field input:focus,
+.note-memo:focus,
+.play-row input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.note-memo {
+  resize: vertical;
+}
+
+/* 플레이 기록 한 줄: 날짜 · 인원 · 승자 · 분 · 메모 · 삭제 */
+.play-list {
+  display: grid;
+  gap: 5px;
+}
+
+.play-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 1.3fr) 52px minmax(56px, 1fr) 52px minmax(70px, 1.4fr) 24px;
+  gap: 4px;
+  align-items: center;
+}
+
+.play-del {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.play-del:hover {
+  background: var(--down-soft);
+  color: var(--down);
+}
+
+/*
+ * 좁을 때는 두 줄로 접는다.
+ *
+ * 한 줄 배치는 최소 370px 가 필요한데 상세 패널은 모바일에서 그보다 좁고,
+ * 데스크톱에서도 사용자가 끌어서 줄일 수 있다. 그래서 화면 폭이 아니라
+ * 패널 폭을 기준으로 판단한다(.drawer 가 컨테이너).
+ *   1줄: 날짜 · 인원 · 시간 · 삭제
+ *   2줄: 승자 · 메모
+ */
+@container (max-width: 470px) {
+  .play-row {
+    grid-template-columns: minmax(0, 1fr) 48px 48px 24px;
+    padding-bottom: 6px;
+    border-bottom: 1px dashed var(--border);
+  }
+  .play-row > :nth-child(1) { grid-area: 1 / 1; }
+  .play-row > :nth-child(2) { grid-area: 1 / 2; }
+  .play-row > :nth-child(4) { grid-area: 1 / 3; }
+  .play-row > :nth-child(6) { grid-area: 1 / 4; }
+  .play-row > :nth-child(3) { grid-area: 2 / 1 / 2 / 3; }
+  .play-row > :nth-child(5) { grid-area: 2 / 3 / 2 / 5; }
+}
+
+/* ── 내 서재 ────────────────────────────────────────────── */
+.shelf-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 14px 0 20px;
+}
+
+.shelf-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.shelf-stat-label {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.shelf-stat strong {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.shelf-stat-note {
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+.shelf-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.shelf-link {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.14s;
+}
+
+.shelf-link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.shelf-backup {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.shelf-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
 }
 
 /* ── 결과 하단 줄 ──────────────────────────────────────── */

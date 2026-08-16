@@ -100,6 +100,17 @@ const AXES = [
     note: '실제로 소장한 사람 수',
     value: (g) => (g.owned ? Math.log10(g.owned) : null),
   },
+  /*
+   * 내 평점은 반드시 맨 뒤에 둔다.
+   * URL의 w 파라미터가 이 배열 순서대로 직렬화되므로, 중간에 끼우면
+   * 예전에 공유한 링크의 가중치가 한 칸씩 밀린다.
+   */
+  {
+    key: 'mine',
+    label: '내 평점',
+    note: '내가 매긴 점수. 기록이 없는 게임은 중간값으로 친다',
+    value: (g) => noteOf(g.id)?.rating ?? null,
+  },
 ];
 
 /** BGG의 언어 의존도 투표 결과를 짧은 한국어로 바꾼다 */
@@ -117,13 +128,15 @@ function langDepText(raw) {
 }
 
 const PRESETS = {
-  '긱 기본': { rating: 100, margin: 0, votes: 0, momentum: 0, fresh: 0, light: 0, owned: 0 },
-  '숨은 명작': { rating: 65, margin: 45, votes: -70, momentum: 10, fresh: 0, light: 0, owned: -25 },
-  '요즘 뜨는': { rating: 30, margin: 15, votes: 0, momentum: 100, fresh: 35, light: 0, owned: 0 },
-  '신작 헌터': { rating: 50, margin: 20, votes: -15, momentum: 40, fresh: 100, light: 0, owned: 0 },
-  '가족·입문': { rating: 60, margin: 0, votes: 25, momentum: 0, fresh: 10, light: 85, owned: 30 },
-  '헤비 전략': { rating: 80, margin: 15, votes: -10, momentum: 0, fresh: 5, light: -85, owned: 0 },
-  '검증된 스테디': { rating: 70, margin: -10, votes: 55, momentum: 0, fresh: -25, light: 0, owned: 60 },
+  '긱 기본': { rating: 100, margin: 0, votes: 0, momentum: 0, fresh: 0, light: 0, owned: 0, mine: 0 },
+  '숨은 명작': { rating: 65, margin: 45, votes: -70, momentum: 10, fresh: 0, light: 0, owned: -25, mine: 0 },
+  '요즘 뜨는': { rating: 30, margin: 15, votes: 0, momentum: 100, fresh: 35, light: 0, owned: 0, mine: 0 },
+  '신작 헌터': { rating: 50, margin: 20, votes: -15, momentum: 40, fresh: 100, light: 0, owned: 0, mine: 0 },
+  '가족·입문': { rating: 60, margin: 0, votes: 25, momentum: 0, fresh: 10, light: 85, owned: 30, mine: 0 },
+  '헤비 전략': { rating: 80, margin: 15, votes: -10, momentum: 0, fresh: 5, light: -85, owned: 0, mine: 0 },
+  '검증된 스테디': { rating: 70, margin: -10, votes: 55, momentum: 0, fresh: -25, light: 0, owned: 60, mine: 0 },
+  // 내 평점을 축으로 쓰는 프리셋. 기록이 쌓일수록 쓸모가 커진다.
+  '내 취향순': { rating: 25, margin: 0, votes: 0, momentum: 0, fresh: 0, light: 0, owned: 0, mine: 100 },
 };
 
 const DEFAULT_FILTERS = () => ({
@@ -146,12 +159,85 @@ const DEFAULT_FILTERS = () => ({
   noTextOnly: false,
   krOnly: false,
   myListOnly: false,
+  notPlayedOnly: false,
+  ratedOnly: false,
   hideExcluded: true,
   q: '',
 });
 
 /** 한 번에 비교할 수 있는 게임 수 */
 const COMPARE_MAX = 4;
+
+/* ── 내 기록 ──────────────────────────────────────────────
+ * 게임별로 붙는 개인 자료. localStorage 의 lz.notes 에 통째로 들어간다.
+ *
+ *   {
+ *     rating: 8.5,                       내 평점 (0~10)
+ *     fair:   45000,                     내가 생각하는 적정가
+ *     target: 30000,                     관심 게임의 목표가 ("이 값 이하면 산다")
+ *     memo:   '...',
+ *     buy:  { price, date, from },       구입
+ *     sell: { price, date, to },         판매
+ *     plays: [ { date, players, winner, minutes, note } ]
+ *   }
+ *
+ * 비어 있는 항목은 아예 저장하지 않는다(빈 객체가 쌓이면 내보낸 파일이 지저분해진다).
+ */
+const notes = JSON.parse(localStorage.getItem('lz.notes') ?? '{}');
+
+const noteOf = (id) => notes[id];
+
+function saveNotes() {
+  // 값이 하나도 없는 기록은 버린다
+  for (const [id, n] of Object.entries(notes)) {
+    const empty =
+      n.rating == null &&
+      n.fair == null &&
+      n.target == null &&
+      !n.memo &&
+      !n.buy &&
+      !n.sell &&
+      !(n.plays?.length);
+    if (empty) delete notes[id];
+  }
+  localStorage.setItem('lz.notes', JSON.stringify(notes));
+}
+
+/** 해당 게임의 기록을 꺼내되, 없으면 만들어서 돌려준다 */
+function noteFor(id) {
+  return (notes[id] ??= {});
+}
+
+const playCount = (id) => noteOf(id)?.plays?.length ?? 0;
+
+/** 마지막으로 플레이한 날짜 문자열. 기록이 없으면 null */
+function lastPlayed(id) {
+  const plays = noteOf(id)?.plays;
+  if (!plays?.length) return null;
+  return plays.reduce((a, p) => (p.date > a ? p.date : a), plays[0].date);
+}
+
+/**
+ * 1판당 비용. 보드게이머가 "이거 살 만했나"를 판단할 때 실제로 쓰는 지표다.
+ * 구입가와 플레이 기록이 둘 다 있어야 나온다.
+ */
+function costPerPlay(id) {
+  const n = noteOf(id);
+  const price = n?.buy?.price;
+  const plays = playCount(id);
+  if (price == null || !plays) return null;
+  return Math.round(price / plays);
+}
+
+/** 판매까지 마쳤다면 손익 */
+function profit(id) {
+  const n = noteOf(id);
+  if (n?.buy?.price == null || n?.sell?.price == null) return null;
+  return n.sell.price - n.buy.price;
+}
+
+const daysSince = (date) =>
+  date ? Math.floor((Date.now() - Date.parse(date + 'T00:00:00')) / 86400000) : null;
 
 const state = {
   data: null,
@@ -164,6 +250,8 @@ const state = {
   view: [],
   // 'table' | 'cards'. 표는 값을 비교할 때, 카드는 훑어볼 때 쓴다.
   viewMode: localStorage.getItem('lz.viewMode') === 'cards' ? 'cards' : 'table',
+  // 내 평점·플레이·1판당 비용 열을 표에 보일지. 기록이 있으면 자동으로 켜진다.
+  showNotes: false,
 };
 
 /* ── 백분위 계산 ──────────────────────────────────────── */
@@ -238,6 +326,9 @@ function matches(g, f) {
   if (f.risingOnly && !(g.delta?.[30]?.rank > 0)) return false;
   if (f.noTextOnly && !/no necessary in-game text/i.test(g.langDep ?? '')) return false;
   if (f.krOnly && !g.kr) return false;
+  // 샀는데 아직 안 꺼내본 게임. 컬렉션을 정리할 때 제일 먼저 보게 된다.
+  if (f.notPlayedOnly && !(noteOf(g.id)?.buy && !playCount(g.id))) return false;
+  if (f.ratedOnly && noteOf(g.id)?.rating == null) return false;
 
   const flag = state.flags[g.id];
   if (f.myListOnly && flag !== 'want' && flag !== 'own') return false;
@@ -272,12 +363,24 @@ const SORT_VALUE = {
   d30: (g) => g.delta?.[30]?.rank,
   d30pct: (g) => g.delta?.[30]?.rankPct,
   dvotes: (g) => g.delta?.[30]?.votes,
+  // 내 기록에서 나오는 값들
+  mine: (g) => noteOf(g.id)?.rating,
+  plays: (g) => playCount(g.id) || null,
+  cpp: (g) => costPerPlay(g.id),
 };
 
+/*
+ * mine: true 인 열은 "내 기록" 열이라 기본으로는 감춰 둔다.
+ * 기록이 없으면 전부 '–' 라 표만 넓어지기 때문이다.
+ * 기록이 하나라도 있으면 처음부터 켜진다(아래 main 참고).
+ */
 const COLUMNS = [
   { key: 'score', label: '점수' },
   { key: 'rank', label: '긱순위' },
   { key: 'name', label: '게임', left: true },
+  { key: 'mine', label: '내 평점', mine: true },
+  { key: 'plays', label: '플레이', mine: true },
+  { key: 'cpp', label: '1판당', mine: true },
   { key: 'year', label: '연도' },
   { key: 'players', label: '추천인원' },
   { key: 'weight', label: '난이도' },
@@ -289,6 +392,8 @@ const COLUMNS = [
   { key: 'd30', label: '30일 변동' },
   { key: 'dvotes', label: '평가 증가' },
 ];
+
+const visibleColumns = () => COLUMNS.filter((c) => !c.mine || state.showNotes);
 
 function recompute() {
   const f = state.filters;
@@ -902,66 +1007,12 @@ function renderMore() {
   const slice = state.view.slice(state.rendered, state.rendered + CHUNK);
   const frag = document.createDocumentFragment();
 
-  slice.forEach((g, i) => {
-    const idx = state.rendered + i + 1;
+  slice.forEach((g) => {
     const tr = el('tr');
     tr.dataset.id = g.id;
-
-    tr.append(
-      el('td', {}, scorePill(g._score100)),
-      el('td', {
-        className: `rank-cell${g.rank <= 3 ? ` m${g.rank}` : ''}`,
-        textContent: g.rank ?? '–',
-      }),
-      el(
-        'td',
-        { className: 'left' },
-        el(
-          'div',
-          { className: 'title-cell' },
-          el('img', { src: g.thumb ?? '', alt: '', loading: 'lazy' }),
-          el(
-            'div',
-            { className: 'title-main' },
-            el(
-              'b',
-              {},
-              g.kor ?? g.name ?? '',
-              g.kr
-                ? el('span', {
-                    className: 'kr-badge',
-                    textContent: '정발',
-                    title: g.krPub ? `국내 발매: ${g.krPub}` : '한글 발매명이 BGG에 등록돼 있음',
-                  })
-                : null
-            ),
-            el('small', { textContent: g.kor ? g.name : g.desc ?? '' })
-          ),
-          el(
-            'span',
-            { className: 'row-actions' },
-            flagButton(g, 'want', '★', '관심'),
-            flagButton(g, 'own', '●', '보유'),
-            flagButton(g, 'skip', '✕', '제외'),
-            compareButton(g)
-          )
-        )
-      ),
-      el('td', { textContent: g.year ?? '–' }),
-      el('td', { textContent: playersText(g) }),
-      weightCell(g.weight),
-      el('td', { textContent: g.maxTime ? (g.minTime === g.maxTime ? `${g.maxTime}` : `${g.minTime}–${g.maxTime}`) : '–' }),
-      el('td', { textContent: g.bayes != null ? g.bayes.toFixed(2) : '–' }),
-      el('td', { textContent: g.average != null ? g.average.toFixed(2) : '–' }),
-      el('td', { textContent: g.margin != null ? g.margin.toFixed(2) : '–' }),
-      el('td', { textContent: fmt(g.votes) }),
-      deltaCell(g.delta?.[30]?.rank),
-      deltaCell(g.delta?.[30]?.votes)
-    );
-
+    tr.append(...visibleColumns().map((c) => CELL[c.key](g)));
     tr.onclick = () => openDrawer(g);
     frag.append(tr);
-    void idx;
   });
 
   tbody.append(frag);
@@ -969,10 +1020,88 @@ function renderMore() {
   renderShownCount();
 }
 
+/*
+ * 열 하나를 그리는 함수들. COLUMNS 의 key 와 짝을 이룬다.
+ * 머리글과 본문이 같은 목록(visibleColumns)을 돌게 해서, 열을 켜고 끌 때
+ * 둘이 어긋나는 일이 없도록 한다.
+ */
+const CELL = {
+  score: (g) => el('td', {}, scorePill(g._score100)),
+  rank: (g) =>
+    el('td', {
+      className: `rank-cell${g.rank <= 3 ? ` m${g.rank}` : ''}`,
+      textContent: g.rank ?? '–',
+    }),
+  name: (g) =>
+    el(
+      'td',
+      { className: 'left' },
+      el(
+        'div',
+        { className: 'title-cell' },
+        el('img', { src: g.thumb ?? '', alt: '', loading: 'lazy' }),
+        el(
+          'div',
+          { className: 'title-main' },
+          el(
+            'b',
+            {},
+            g.kor ?? g.name ?? '',
+            g.kr
+              ? el('span', {
+                  className: 'kr-badge',
+                  textContent: '정발',
+                  title: g.krPub ? `국내 발매: ${g.krPub}` : '한글 발매명이 BGG에 등록돼 있음',
+                })
+              : null
+          ),
+          el('small', { textContent: g.kor ? g.name : g.desc ?? '' })
+        ),
+        el(
+          'span',
+          { className: 'row-actions' },
+          flagButton(g, 'want', '★', '관심'),
+          flagButton(g, 'own', '●', '보유'),
+          flagButton(g, 'skip', '✕', '제외'),
+          compareButton(g)
+        )
+      )
+    ),
+  mine: (g) => {
+    const r = noteOf(g.id)?.rating;
+    return el('td', {}, r == null ? '–' : el('span', { className: 'my-rating', textContent: r.toFixed(1) }));
+  },
+  plays: (g) => {
+    const n = playCount(g.id);
+    const since = daysSince(lastPlayed(g.id));
+    return el('td', {
+      textContent: n || '–',
+      title: since == null ? '' : since === 0 ? '오늘 플레이' : `마지막 플레이 ${since}일 전`,
+    });
+  },
+  cpp: (g) => {
+    const v = costPerPlay(g.id);
+    return el('td', { textContent: v == null ? '–' : `${fmt(v)}원` });
+  },
+  year: (g) => el('td', { textContent: g.year ?? '–' }),
+  players: (g) => el('td', { textContent: playersText(g) }),
+  weight: (g) => weightCell(g.weight),
+  time: (g) =>
+    el('td', {
+      textContent: g.maxTime ? (g.minTime === g.maxTime ? `${g.maxTime}` : `${g.minTime}–${g.maxTime}`) : '–',
+    }),
+  bayes: (g) => el('td', { textContent: g.bayes != null ? g.bayes.toFixed(2) : '–' }),
+  average: (g) => el('td', { textContent: g.average != null ? g.average.toFixed(2) : '–' }),
+  margin: (g) => el('td', { textContent: g.margin != null ? g.margin.toFixed(2) : '–' }),
+  votes: (g) => el('td', { textContent: fmt(g.votes) }),
+  d30: (g) => deltaCell(g.delta?.[30]?.rank),
+  dvotes: (g) => deltaCell(g.delta?.[30]?.votes),
+};
+
 function renderHead() {
   const row = $('#headRow');
   row.replaceChildren(
-    ...COLUMNS.map((c) => {
+    ...visibleColumns().map((c) => {
       const th = el('th', {
         textContent: c.label + (state.sort.key === c.key ? (state.sort.dir < 0 ? ' ▼' : ' ▲') : ''),
         className: `${c.left ? 'left ' : ''}${state.sort.key === c.key ? 'sorted' : ''}`,
@@ -1549,6 +1678,7 @@ function openDrawer(g) {
     kv,
     el('div', { className: 'sub', style: 'margin-top:14px' }, '순위 추이 (최근 5년)'),
     rankChart(g) ?? el('p', { className: 'sub', textContent: '순위 기록이 부족합니다.' }),
+    noteSection(g),
     tags('메커니즘', g.mechanics, 'mechanics'),
     tags('카테고리', g.categories, 'categories'),
     tags('디자이너', g.designers),
@@ -1564,6 +1694,501 @@ function openDrawer(g) {
   );
 
   if (CONFIG.LIVE_PROXY) loadReviews(g, reviewBox);
+}
+
+/* ── 내 기록 편집 ─────────────────────────────────────── */
+
+const won = (v) => (v == null ? '–' : `${v.toLocaleString('ko-KR')}원`);
+const today = () => new Date().toISOString().slice(0, 10);
+
+/** 라벨 + 입력 한 쌍. 값이 바뀌면 note 에 바로 반영한다. */
+function noteField(label, { type = 'number', value, placeholder = '', onSet, step, min, max }) {
+  const input = el('input', { type, placeholder, value: value ?? '' });
+  if (step != null) input.step = step;
+  if (min != null) input.min = min;
+  if (max != null) input.max = max;
+  input.onchange = () => {
+    const raw = input.value.trim();
+    onSet(raw === '' ? null : type === 'number' ? Number(raw) : raw);
+  };
+  return el('label', { className: 'note-field' }, el('span', { textContent: label }), input);
+}
+
+/**
+ * 상세 패널의 "내 기록" 구역.
+ *
+ * 값을 고치면 즉시 저장하고 표를 다시 그린다(저장 버튼을 따로 두지 않는다).
+ */
+function noteSection(g) {
+  const box = el('section', { className: 'note-section' });
+
+  const rerender = () => {
+    saveNotes();
+    autoShowNoteColumns();
+    recompute();
+    paint();
+  };
+
+  const paint = () => {
+    const n = noteFor(g.id);
+    const plays = n.plays ?? [];
+    const cpp = costPerPlay(g.id);
+    const pf = profit(g.id);
+    const since = daysSince(lastPlayed(g.id));
+
+    // ── 요약 줄: 기록에서 바로 나오는 지표들
+    const chips = [];
+    if (plays.length) chips.push(`${plays.length}판`);
+    if (since != null) chips.push(since === 0 ? '오늘 플레이' : `${since}일 전`);
+    if (cpp != null) chips.push(`1판당 ${won(cpp)}`);
+    if (pf != null) chips.push(`${pf >= 0 ? '이익' : '손해'} ${won(Math.abs(pf))}`);
+
+    box.replaceChildren(
+      el(
+        'div',
+        { className: 'note-head' },
+        el('h4', { textContent: '내 기록' }),
+        chips.length
+          ? el('div', { className: 'note-chips' }, ...chips.map((c) => el('span', { textContent: c })))
+          : null
+      ),
+
+      // ── 평점 · 메모
+      el(
+        'div',
+        { className: 'note-grid' },
+        noteField('내 평점 (0–10)', {
+          value: n.rating,
+          step: 0.5,
+          min: 0,
+          max: 10,
+          placeholder: '8.5',
+          onSet: (v) => {
+            n.rating = v;
+            rerender();
+          },
+        }),
+        noteField('적정가 (내 기준)', {
+          value: n.fair,
+          placeholder: '45000',
+          onSet: (v) => {
+            n.fair = v;
+            rerender();
+          },
+        }),
+        noteField('목표가 (이하면 산다)', {
+          value: n.target,
+          placeholder: '30000',
+          onSet: (v) => {
+            n.target = v;
+            rerender();
+          },
+        })
+      ),
+
+      // ── 구입
+      el('div', { className: 'note-label' }, '구입'),
+      el(
+        'div',
+        { className: 'note-grid' },
+        noteField('구입가', {
+          value: n.buy?.price,
+          placeholder: '52000',
+          onSet: (v) => {
+            n.buy = { ...n.buy, price: v };
+            if (v != null && !n.buy.date) n.buy.date = today();
+            if (n.buy.price == null && !n.buy.date && !n.buy.from) delete n.buy;
+            rerender();
+          },
+        }),
+        noteField('구입일', {
+          type: 'date',
+          value: n.buy?.date,
+          onSet: (v) => {
+            n.buy = { ...n.buy, date: v };
+            rerender();
+          },
+        }),
+        noteField('구입처', {
+          type: 'text',
+          value: n.buy?.from,
+          placeholder: '보드라이프 중고',
+          onSet: (v) => {
+            n.buy = { ...n.buy, from: v };
+            rerender();
+          },
+        })
+      ),
+
+      // ── 판매
+      el('div', { className: 'note-label' }, '판매'),
+      el(
+        'div',
+        { className: 'note-grid' },
+        noteField('판매가', {
+          value: n.sell?.price,
+          placeholder: '38000',
+          onSet: (v) => {
+            n.sell = { ...n.sell, price: v };
+            if (v != null && !n.sell.date) n.sell.date = today();
+            if (n.sell.price == null && !n.sell.date && !n.sell.to) delete n.sell;
+            rerender();
+          },
+        }),
+        noteField('판매일', {
+          type: 'date',
+          value: n.sell?.date,
+          onSet: (v) => {
+            n.sell = { ...n.sell, date: v };
+            rerender();
+          },
+        }),
+        noteField('판매처', {
+          type: 'text',
+          value: n.sell?.to,
+          placeholder: '당근',
+          onSet: (v) => {
+            n.sell = { ...n.sell, to: v };
+            rerender();
+          },
+        })
+      ),
+
+      // ── 플레이 기록
+      el(
+        'div',
+        { className: 'note-label with-action' },
+        el('span', { textContent: `플레이 기록 ${plays.length ? `(${plays.length}판)` : ''}` }),
+        (() => {
+          const add = el('button', { className: 'ghost-btn', textContent: '+ 오늘 한 판' });
+          add.onclick = () => {
+            (n.plays ??= []).unshift({
+              date: today(),
+              players: g.best?.[0] ?? g.minPlayers ?? null,
+              winner: '',
+              minutes: g.maxTime ?? null,
+              note: '',
+            });
+            rerender();
+          };
+          return add;
+        })()
+      ),
+      plays.length
+        ? el('div', { className: 'play-list' }, ...plays.map((p, i) => playRow(n, p, i, rerender)))
+        : el('p', { className: 'sub', textContent: '아직 기록이 없습니다.' }),
+
+      // ── 자유 메모
+      el('div', { className: 'note-label' }, '메모'),
+      (() => {
+        const ta = el('textarea', {
+          className: 'note-memo',
+          rows: 2,
+          placeholder: '확장은 뭘 샀는지, 누구랑 하면 재밌는지 …',
+          value: n.memo ?? '',
+        });
+        ta.onchange = () => {
+          n.memo = ta.value.trim() || undefined;
+          saveNotes();
+        };
+        return ta;
+      })()
+    );
+  };
+
+  paint();
+  return box;
+}
+
+/** 플레이 기록 한 줄 */
+function playRow(n, p, i, rerender) {
+  const set = (key, type) => (e) => {
+    const raw = e.target.value.trim();
+    p[key] = raw === '' ? null : type === 'number' ? Number(raw) : raw;
+    saveNotes();
+    if (key === 'date') rerender(); // 날짜가 바뀌면 "마지막 플레이"가 달라진다
+  };
+
+  const del = el('button', { className: 'play-del', textContent: '×', title: '이 기록 삭제' });
+  del.onclick = () => {
+    n.plays.splice(i, 1);
+    if (!n.plays.length) delete n.plays;
+    rerender();
+  };
+
+  const inp = (type, key, ph, value, extra = {}) =>
+    el('input', { type, placeholder: ph, value: value ?? '', onchange: set(key, type), ...extra });
+
+  return el(
+    'div',
+    { className: 'play-row' },
+    inp('date', 'date', '', p.date),
+    inp('number', 'players', '인원', p.players, { min: 1, max: 20 }),
+    inp('text', 'winner', '승자', p.winner),
+    inp('number', 'minutes', '분', p.minutes, { min: 1, step: 5 }),
+    inp('text', 'note', '메모', p.note),
+    del
+  );
+}
+
+/** 기록이 하나라도 생기면 표의 "내 기록" 열을 자동으로 켠다 */
+function autoShowNoteColumns() {
+  if (state.showNotes) return;
+  if (!Object.keys(notes).length) return;
+  state.showNotes = true;
+  $('#showNotes').checked = true;
+  renderHead();
+}
+
+/* ── 내 서재 (기록 요약) ──────────────────────────────── */
+
+/**
+ * 보드게이머용 H-index.
+ *
+ * "N개의 게임을 각각 N번 이상 플레이했다"의 최대 N. 한 게임만 100판 한 사람과
+ * 100개를 골고루 한 사람을 구분해 준다. 총 플레이 수만 보면 안 보이는 값이다.
+ */
+function playHIndex() {
+  const counts = Object.keys(notes)
+    .map((id) => playCount(id))
+    .filter(Boolean)
+    .sort((a, b) => b - a);
+  let h = 0;
+  while (h < counts.length && counts[h] >= h + 1) h++;
+  return h;
+}
+
+/** id로 게임을 찾는다. 아직 안 받은 순위대의 게임은 없을 수 있다. */
+const gameById = (id) => state.data?.games.find((g) => String(g.id) === String(id));
+const titleOf = (id) => {
+  const g = gameById(id);
+  return g ? g.kor ?? g.name : `#${id}`;
+};
+
+function shelfStats() {
+  const ids = Object.keys(notes);
+  let spent = 0;
+  let earned = 0;
+  let plays = 0;
+  let rated = 0;
+  let diffSum = 0;
+  let diffN = 0;
+  const dusty = []; // 샀는데 한 번도 안 한 것
+  const stale = []; // 180일 넘게 안 한 것
+
+  for (const id of ids) {
+    const n = notes[id];
+    if (n.buy?.price != null) spent += n.buy.price;
+    if (n.sell?.price != null) earned += n.sell.price;
+    const pc = playCount(id);
+    plays += pc;
+    if (n.rating != null) {
+      rated++;
+      const g = gameById(id);
+      if (g?.bayes != null) {
+        diffSum += n.rating - g.bayes;
+        diffN++;
+      }
+    }
+    if (n.buy && !pc) dusty.push(id);
+    else {
+      const since = daysSince(lastPlayed(id));
+      if (since != null && since >= 180) stale.push({ id, since });
+    }
+  }
+  stale.sort((a, b) => b.since - a.since);
+
+  return {
+    tracked: ids.length,
+    spent,
+    earned,
+    net: spent - earned,
+    plays,
+    rated,
+    avgDiff: diffN ? diffSum / diffN : null,
+    perPlay: plays ? Math.round((spent - earned) / plays) : null,
+    hIndex: playHIndex(),
+    dusty,
+    stale,
+  };
+}
+
+function openShelf() {
+  const view = $('#shelfView');
+  const s = shelfStats();
+
+  const close = el('button', { className: 'close', textContent: '×', title: '닫기' });
+  close.onclick = () => (view.hidden = true);
+
+  const stat = (label, value, note = '') =>
+    el(
+      'div',
+      { className: 'shelf-stat' },
+      el('span', { className: 'shelf-stat-label', textContent: label }),
+      el('strong', { textContent: value }),
+      note ? el('span', { className: 'shelf-stat-note', textContent: note }) : null
+    );
+
+  /** 게임 목록을 눌러서 바로 상세로 갈 수 있게 */
+  const gameLinks = (ids, suffix = () => '') =>
+    el(
+      'div',
+      { className: 'shelf-links' },
+      ...ids.slice(0, 24).map((item) => {
+        const id = item.id ?? item;
+        const btn = el('button', { className: 'shelf-link', textContent: titleOf(id) + suffix(item) });
+        btn.onclick = () => {
+          const g = gameById(id);
+          if (!g) return toast('이 게임은 아직 수집 범위 밖입니다');
+          view.hidden = true;
+          openDrawer(g);
+        };
+        return btn;
+      }),
+      ids.length > 24 ? el('span', { className: 'sub', textContent: `외 ${ids.length - 24}개` }) : null
+    );
+
+  view.replaceChildren(
+    close,
+    el('h2', { textContent: '내 서재' }),
+    s.tracked
+      ? el('p', { className: 'sub', textContent: `기록이 있는 게임 ${s.tracked}개` })
+      : el('p', {
+          className: 'sub',
+          textContent: '아직 기록이 없습니다. 게임을 열어 "내 기록"에 평점이나 구입가를 적어보세요.',
+        }),
+
+    el(
+      'div',
+      { className: 'shelf-stats' },
+      stat('쓴 돈', won(s.spent)),
+      stat('되판 돈', won(s.earned)),
+      stat('순지출', won(s.net), s.earned ? '쓴 돈 − 되판 돈' : ''),
+      stat('총 플레이', `${s.plays}판`),
+      stat('1판당 비용', s.perPlay == null ? '–' : won(s.perPlay), '순지출 ÷ 총 플레이'),
+      stat('H-지수', String(s.hIndex), `${s.hIndex}개를 각각 ${s.hIndex}판 이상`),
+      stat('내가 매긴 평점', `${s.rated}개`),
+      stat(
+        'BGG와의 차이',
+        s.avgDiff == null ? '–' : `${s.avgDiff > 0 ? '+' : ''}${s.avgDiff.toFixed(2)}`,
+        s.avgDiff == null ? '' : s.avgDiff > 0 ? '내가 더 후하다' : '내가 더 짜다'
+      )
+    ),
+
+    s.dusty.length
+      ? el(
+          'section',
+          {},
+          el('h3', { textContent: `사놓고 아직 안 한 게임 (${s.dusty.length})` }),
+          el('p', { className: 'sub', textContent: '구입 기록은 있는데 플레이 기록이 없습니다.' }),
+          gameLinks(s.dusty)
+        )
+      : null,
+
+    s.stale.length
+      ? el(
+          'section',
+          {},
+          el('h3', { textContent: `한동안 안 꺼낸 게임 (${s.stale.length})` }),
+          el('p', { className: 'sub', textContent: '마지막 플레이가 180일 이상 지났습니다.' }),
+          gameLinks(s.stale, (x) => ` · ${x.since}일`)
+        )
+      : null,
+
+    // ── 백업
+    el(
+      'section',
+      { className: 'shelf-backup' },
+      el('h3', { textContent: '백업' }),
+      el('p', {
+        className: 'sub',
+        textContent:
+          '기록은 이 브라우저에만 저장됩니다. 브라우저 데이터를 지우면 함께 사라지므로, 가끔 파일로 내보내 두세요.',
+      }),
+      el(
+        'div',
+        { className: 'shelf-actions' },
+        (() => {
+          const b = el('button', { className: 'ghost-btn', textContent: '기록 내보내기 (JSON)' });
+          b.onclick = exportNotes;
+          return b;
+        })(),
+        (() => {
+          const b = el('button', { className: 'ghost-btn', textContent: '기록 가져오기' });
+          b.onclick = importNotes;
+          return b;
+        })()
+      )
+    )
+  );
+  view.hidden = false;
+}
+
+/** 기록 + 관심/보유 표시를 한 파일로 내보낸다 */
+function exportNotes() {
+  const payload = {
+    kind: 'boardgame-ranking-lab/notes',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    flags: state.flags,
+    notes,
+  };
+  const url = URL.createObjectURL(
+    new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+  );
+  const a = el('a', { href: url, download: `보드게임-내기록-${today()}.json` });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  toast('기록을 내보냈습니다');
+}
+
+/**
+ * 파일에서 기록을 되살린다.
+ *
+ * 지금 기록을 통째로 갈아엎지 않고 게임 단위로 합친다. 다른 기기에서 적은
+ * 것을 가져올 때 이쪽 기록이 사라지면 곤란하기 때문이다. 같은 게임이 양쪽에
+ * 있으면 물어본다.
+ */
+function importNotes() {
+  const input = el('input', { type: 'file', accept: 'application/json,.json' });
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    let data;
+    try {
+      data = JSON.parse(await file.text());
+    } catch {
+      return toast('JSON 파일을 읽지 못했습니다');
+    }
+    if (data?.kind !== 'boardgame-ranking-lab/notes' || !data.notes) {
+      return toast('이 사이트에서 내보낸 파일이 아닙니다');
+    }
+
+    const incoming = Object.keys(data.notes);
+    const clash = incoming.filter((id) => notes[id]);
+    if (clash.length) {
+      const ok = await confirmDialog({
+        title: `${clash.length}개 게임의 기록이 겹칩니다`,
+        body: `가져온 파일의 내용으로 덮어씁니다. 겹치지 않는 ${incoming.length - clash.length}개는 그대로 추가됩니다. 지금 기록을 먼저 내보내 두는 편이 안전합니다.`,
+        confirmText: '덮어쓰기',
+        danger: true,
+      });
+      if (!ok) return;
+    }
+
+    Object.assign(notes, data.notes);
+    if (data.flags) Object.assign(state.flags, data.flags);
+    saveNotes();
+    saveFlags();
+    autoShowNoteColumns();
+    renderHead();
+    recompute();
+    $('#shelfView').hidden = true;
+    toast(`${incoming.length}개 게임의 기록을 가져왔습니다`);
+  };
+  input.click();
 }
 
 /* ── UI 구성 ──────────────────────────────────────────── */
@@ -1887,6 +2512,8 @@ function buildFilters() {
     ['noTextOnly', 'noTextOnly'],
     ['krOnly', 'krOnly'],
     ['myListOnly', 'myListOnly'],
+    ['notPlayedOnly', 'notPlayedOnly'],
+    ['ratedOnly', 'ratedOnly'],
     ['hideExcluded', 'hideExcluded'],
   ]) {
     const box = document.getElementById(id);
@@ -2002,7 +2629,7 @@ function toast(msg, undo = null) {
 }
 
 function exportCsv() {
-  const head = ['순위', '점수', '이름', '한글명', '국내정발', '국내발매사', '연도', '난이도', '최소인원', '최대인원', '추천인원', '최소시간', '최대시간', 'BGG평점', '유저평점', '평가수', '30일변동'];
+  const head = ['순위', '점수', '이름', '한글명', '국내정발', '국내발매사', '내평점', '플레이수', '마지막플레이', '구입가', '판매가', '1판당비용', '연도', '난이도', '최소인원', '최대인원', '추천인원', '최소시간', '최대시간', 'BGG평점', '유저평점', '평가수', '30일변동'];
   const rows = state.view.map((g) => [
     g.rank,
     g._score100,
@@ -2010,6 +2637,12 @@ function exportCsv() {
     g.kor ?? '',
     g.kr ? 'O' : '',
     g.krPub ?? '',
+    noteOf(g.id)?.rating ?? '',
+    playCount(g.id) || '',
+    lastPlayed(g.id) ?? '',
+    noteOf(g.id)?.buy?.price ?? '',
+    noteOf(g.id)?.sell?.price ?? '',
+    costPerPlay(g.id) ?? '',
     g.year,
     g.weight,
     g.minPlayers,
@@ -2091,6 +2724,10 @@ async function main() {
   buildPresets();
   buildSliders();
   buildFilters();
+  // 열 구성은 renderHead 보다 먼저 정해야 머리글과 본문이 어긋나지 않는다.
+  // 기록이 이미 있으면 "내 기록" 열을 켠 채로 시작한다.
+  state.showNotes = Object.keys(notes).length > 0;
+  $('#showNotes').checked = state.showNotes;
   renderHead();
   markPreset();
   initCollapsibles();
@@ -2111,6 +2748,13 @@ async function main() {
       recompute();
     }, 160);
   };
+
+  $('#showNotes').onchange = (e) => {
+    state.showNotes = e.target.checked;
+    renderHead();
+    recompute();
+  };
+  $('#myShelf').onclick = openShelf;
 
   applyViewMode();
 

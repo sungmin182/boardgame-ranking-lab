@@ -1,0 +1,31 @@
+{
+  "kind": "boardgame-ranking-lab/notes",
+  "version": 1,
+  "exportedAt": "2026-08-16T06:11:05.672Z",
+  "flags": {},
+  "notes": {
+    "224517": {
+      "rating": 9,
+      "buy": {
+        "price": 52000,
+        "date": "2026-08-16"
+      },
+      "plays": [
+        {
+          "date": "2026-08-16",
+          "players": 3,
+          "winner": "",
+          "minutes": 120,
+          "note": ""
+        },
+        {
+          "date": "2026-08-16",
+          "players": 3,
+          "winner": "",
+          "minutes": 120,
+          "note": ""
+        }
+      ]
+    }
+  }
+}
