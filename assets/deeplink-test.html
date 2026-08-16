@@ -90,12 +90,32 @@
           >눌러보기</a
         >
       </li>
+
+      <li>
+        <span class="what">7. 앱 실행 (정식 방법)</span>
+        <span class="why">
+          앞의 5번은 제가 잘못 만든 형태였습니다. 이게 앱을 그냥 실행시키는 표준 방식입니다.
+          되면 "이름 복사 + 앱 실행"을 만들 수 있습니다.
+        </span>
+        <a
+          class="try"
+          href="intent:#Intent;package=com.towneers.www;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;end"
+          >눌러보기</a
+        >
+      </li>
+
+      <li>
+        <span class="what">8. 앱 실행 (더 단순한 형태)</span>
+        <span class="why">7번이 안 될 때의 대안</span>
+        <a class="try" href="intent:#Intent;package=com.towneers.www;end">눌러보기</a>
+      </li>
     </ol>
 
     <div class="note">
       <strong>알려주실 것</strong><br />
-      1~6번 각각 <em>앱</em>인지 <em>웹</em>인지 (아무 일도 안 일어나면 <em>무반응</em>)<br /><br />
-      예) 1 웹 · 2 앱 · 3 웹 · 4 웹 · 5 앱 · 6 앱
+      7·8번만 확인해 주세요. <em>앱</em>인지 <em>웹</em>인지 (아무 일도 안 일어나면
+      <em>무반응</em>)<br /><br />
+      예) 7 앱 · 8 무반응
     </div>
   </body>
 </html>

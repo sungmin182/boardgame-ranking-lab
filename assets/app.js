@@ -1235,7 +1235,34 @@ function externalLink(key, name) {
   const web = fill(isMobile() && conf.mobile ? conf.mobile : conf.url);
   const a = el('a', { className: 'ghost-btn', textContent: `${conf.label} ↗`, rel: 'noopener' });
 
-  // 안드로이드 + 앱이 있는 곳: intent:// 로 앱을 열고, 없으면 웹으로 떨어진다.
+  /*
+   * 앱이 검색 주소를 받아주지 않는 곳(당근)에서 쓰는 차선책.
+   *
+   * 실제로 재보니 당근 앱은 /articles/... 같은 개별 글 주소만 앱으로 받고,
+   * 검색·첫 화면 주소는 그냥 주소든 intent:// 든 전부 웹으로 떨어졌다
+   * (assets/deeplink-test.html 로 여섯 가지를 나란히 확인). 앱 고유 스킴은
+   * 공개돼 있지 않다. 그래서 웹 링크만으로 앱 검색까지 가는 길은 없다.
+   *
+   * 대신 이름을 복사해 두면 앱에서 붙여넣기만 하면 되므로, 폰 자판으로 긴
+   * 이름을 다시 치는 수고는 없앤다. intent:// 보다 앞에 둔다 — 어차피 앱이
+   * 안 받아 웹으로 떨어질 링크라면 복사라도 해 주는 편이 낫다.
+   */
+  if (isMobile() && conf.copyName) {
+    a.textContent = `${conf.label} (이름 복사) ↗`;
+    a.href = web;
+    a.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(q);
+        toast(`「${q}」 복사됨 · 당근 앱 검색창에 붙여넣으세요`);
+      } catch {
+        /* 클립보드를 못 쓰면 그냥 웹으로 넘어간다 */
+      }
+    };
+    return a;
+  }
+
+  // 안드로이드에서 앱이 그 주소를 받아주는 곳: intent:// 로 앱을 열고,
+  // 못 받으면 browser_fallback_url 로 웹이 열린다.
   if (isAndroid() && conf.androidPackage) {
     a.href =
       `intent://${web.replace(/^https?:\/\//, '')}#Intent;scheme=https;` +
