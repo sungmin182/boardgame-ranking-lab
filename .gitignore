@@ -8,3 +8,6 @@ node_modules/
 _site/
 .wrangler/
 .DS_Store
+
+# 내보낸 기록 백업 파일 (개인 자료 — 저장소에 올리지 않는다)
+보드게임-내기록-*.json
