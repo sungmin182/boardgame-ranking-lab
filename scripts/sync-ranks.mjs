@@ -17,6 +17,15 @@ const RAW = 'https://raw.githubusercontent.com/beefsack/bgg-ranking-historicals/
 export const OFFSETS = [7, 30, 365];
 
 /**
+ * 수집할 게임 수. LIMIT 환경변수로 덮어쓴다.
+ *
+ * 덤프에는 순위가 붙은 게임이 3만 개 넘게 있지만 전부 쓸모 있는 것은 아니다.
+ * 1만위의 평가 수는 아직 400개대인데 1만5천위는 53개로 떨어진다. 표본이
+ * 그 정도면 평점도 순위도 흔들려서 "다시 정렬"의 재료가 되지 못한다.
+ */
+export const DEFAULT_LIMIT = 10000;
+
+/**
  * 순위 추이 그래프용 표본.
  *
  * CSV 한 개가 5~7MB라 월 단위(60개)는 내려받는 양이 과하다. 분기 단위로 5년,
@@ -84,7 +93,7 @@ function index(rows) {
   return map;
 }
 
-export async function syncRanks({ limit = 1500 } = {}) {
+export async function syncRanks({ limit = DEFAULT_LIMIT } = {}) {
   const today = await fetchNearest(ymd(new Date()));
   if (!today) throw new Error('최신 랭킹 스냅샷을 찾을 수 없습니다.');
   console.log(`[ranks] 기준일 ${today.date} · ${today.rows.length}개 게임`);
@@ -160,7 +169,7 @@ export async function syncRanks({ limit = 1500 } = {}) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const limit = Number(process.env.LIMIT || 1500);
+  const limit = Number(process.env.LIMIT || DEFAULT_LIMIT);
   syncRanks({ limit }).catch((e) => {
     console.error(e);
     process.exit(1);

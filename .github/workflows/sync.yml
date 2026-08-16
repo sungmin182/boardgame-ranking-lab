@@ -43,13 +43,16 @@ jobs:
       - name: 랭킹 스냅샷 수집
         run: node scripts/sync-ranks.mjs
         env:
-          LIMIT: '3000'
+          LIMIT: '10000'
 
+      # 캐시가 비어 있으면 1만 개를 받는 데 한참 걸린다(Actions 한도는 6시간).
+      # 평상시에는 TTL(7일)이 지난 것만, 즉 하루에 1/7 정도만 다시 받는다.
+      # 동시 4 + 120ms 로 받다가 BGG에 429를 맞은 적이 있어 느슨하게 잡았다.
       - name: 상세 정보 수집
         run: node scripts/sync-details.mjs
         env:
-          LIMIT: '3000'
-          CONCURRENCY: '4'
+          LIMIT: '10000'
+          CONCURRENCY: '2'
 
       - name: games.json 빌드
         run: node scripts/build.mjs

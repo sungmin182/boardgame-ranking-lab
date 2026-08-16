@@ -126,6 +126,7 @@ const DEFAULT_FILTERS = () => ({
   cat: {},
   risingOnly: false,
   noTextOnly: false,
+  krOnly: false,
   myListOnly: false,
   hideExcluded: true,
   q: '',
@@ -143,6 +144,8 @@ const state = {
   compare: [],
   rendered: 0,
   view: [],
+  // 'table' | 'cards'. 표는 값을 비교할 때, 카드는 훑어볼 때 쓴다.
+  viewMode: localStorage.getItem('lz.viewMode') === 'cards' ? 'cards' : 'table',
 };
 
 /* ── 백분위 계산 ──────────────────────────────────────── */
@@ -216,6 +219,7 @@ function matches(g, f) {
 
   if (f.risingOnly && !(g.delta?.[30]?.rank > 0)) return false;
   if (f.noTextOnly && !/no necessary in-game text/i.test(g.langDep ?? '')) return false;
+  if (f.krOnly && !g.kr) return false;
 
   const flag = state.flags[g.id];
   if (f.myListOnly && flag !== 'want' && flag !== 'own') return false;
@@ -295,11 +299,40 @@ function recompute() {
   state.view = list;
   state.rendered = 0;
   $('#tbody').replaceChildren();
+  $('#cards').replaceChildren();
   $('#resultCount').textContent = `${list.length.toLocaleString('ko-KR')}개`;
   $('#empty').hidden = list.length > 0;
   renderMore();
   renderExcludedNote();
   syncUrl();
+}
+
+/** 표 / 카드 중 어느 쪽을 보여줄지 화면에 반영한다 */
+function applyViewMode() {
+  const cards = state.viewMode === 'cards';
+  $('#table').hidden = cards;
+  $('#cards').hidden = !cards;
+  document
+    .querySelectorAll('#viewMode button')
+    .forEach((b) => b.classList.toggle('on', b.dataset.view === state.viewMode));
+  localStorage.setItem('lz.viewMode', state.viewMode);
+}
+
+/**
+ * "1만 개 중 지금 몇 개를 보고 있는지"를 알려준다.
+ *
+ * 스크롤로 조금씩 불러오는 구조라, 이 표시가 없으면 목록 끝에 닿았는지
+ * 아직 더 있는지를 알 수 없다.
+ */
+function renderShownCount() {
+  const total = state.view.length;
+  const shown = state.rendered;
+  $('#shownCount').textContent = total
+    ? shown >= total
+      ? `${total.toLocaleString('ko-KR')}개 전부 표시`
+      : `${total.toLocaleString('ko-KR')}개 중 ${shown.toLocaleString('ko-KR')}개 표시 · 스크롤하면 더 불러옵니다`
+    : '–';
+  $('#sentinel').hidden = shown >= total;
 }
 
 /* ── 렌더 ─────────────────────────────────────────────── */
@@ -780,7 +813,72 @@ function openCompare() {
   view.hidden = false;
 }
 
+/** 카드 한 장. 표지를 크게 두고 핵심 수치 네 개만 얹는다. */
+function renderCard(g) {
+  const card = el('button', { className: 'game-card', type: 'button' });
+  card.dataset.id = g.id;
+
+  const stat = (label, value) =>
+    el('span', {}, el('i', { textContent: label }), document.createTextNode(value));
+
+  card.append(
+    el(
+      'div',
+      { className: 'card-cover' },
+      el('img', { src: g.image ?? g.thumb ?? '', alt: '', loading: 'lazy' }),
+      el(
+        'div',
+        { className: 'card-badges' },
+        scorePill(g._score100),
+        el('span', { className: 'card-rank', textContent: g.rank ? `${g.rank}위` : '–' })
+      )
+    ),
+    el(
+      'div',
+      { className: 'card-body' },
+      el(
+        'div',
+        { className: 'card-title' },
+        g.kor ?? g.name ?? '',
+        g.kr
+          ? el('span', {
+              className: 'kr-badge',
+              textContent: '정발',
+              title: g.krPub ? `국내 발매: ${g.krPub}` : '한글 발매명이 BGG에 등록돼 있음',
+            })
+          : null
+      ),
+      el('div', {
+        className: 'card-sub',
+        textContent: `${g.kor && g.name !== g.kor ? g.name + ' · ' : ''}${g.year ?? ''}`,
+      }),
+      el(
+        'div',
+        { className: 'card-stats' },
+        stat('평점', g.bayes != null ? g.bayes.toFixed(2) : '–'),
+        stat('난이도', g.weight != null ? g.weight.toFixed(1) : '–'),
+        stat('인원', playersText(g)),
+        stat('시간', g.maxTime ? `${g.maxTime}분` : '–')
+      )
+    )
+  );
+
+  card.onclick = () => openDrawer(g);
+  return card;
+}
+
 function renderMore() {
+  if (state.viewMode === 'cards') {
+    const box = $('#cards');
+    const slice = state.view.slice(state.rendered, state.rendered + CHUNK);
+    const frag = document.createDocumentFragment();
+    for (const g of slice) frag.append(renderCard(g));
+    box.append(frag);
+    state.rendered += slice.length;
+    renderShownCount();
+    return;
+  }
+
   const tbody = $('#tbody');
   const slice = state.view.slice(state.rendered, state.rendered + CHUNK);
   const frag = document.createDocumentFragment();
@@ -806,7 +904,18 @@ function renderMore() {
           el(
             'div',
             { className: 'title-main' },
-            el('b', { textContent: g.kor ?? g.name ?? '' }),
+            el(
+              'b',
+              {},
+              g.kor ?? g.name ?? '',
+              g.kr
+                ? el('span', {
+                    className: 'kr-badge',
+                    textContent: '정발',
+                    title: g.krPub ? `국내 발매: ${g.krPub}` : '한글 발매명이 BGG에 등록돼 있음',
+                  })
+                : null
+            ),
             el('small', { textContent: g.kor ? g.name : g.desc ?? '' })
           ),
           el(
@@ -838,6 +947,7 @@ function renderMore() {
 
   tbody.append(frag);
   state.rendered += slice.length;
+  renderShownCount();
 }
 
 function renderHead() {
@@ -1293,13 +1403,16 @@ function drawerResizer() {
 function openDrawer(g) {
   const d = $('#drawer');
   d.hidden = false;
-  document.querySelectorAll('#tbody tr.open').forEach((r) => r.classList.remove('open'));
-  document.querySelector(`#tbody tr[data-id="${g.id}"]`)?.classList.add('open');
+  // 표의 행과 카드 양쪽 모두 열린 항목을 표시한다
+  const clearOpen = () =>
+    document.querySelectorAll('#tableWrap .open').forEach((r) => r.classList.remove('open'));
+  clearOpen();
+  document.querySelector(`#tableWrap [data-id="${g.id}"]`)?.classList.add('open');
 
   const close = el('button', { className: 'close', textContent: '×', title: '닫기' });
   close.onclick = () => {
     d.hidden = true;
-    document.querySelectorAll('#tbody tr.open').forEach((r) => r.classList.remove('open'));
+    clearOpen();
   };
 
   const kv = el('dl', { className: 'kv' });
@@ -1313,6 +1426,7 @@ function openDrawer(g) {
   add('시간', g.maxTime ? `${g.minTime}–${g.maxTime}분` : '–');
   add('연령', g.minAge ? `${g.minAge}세+` : '–');
   add('언어 의존', langDepText(g.langDep));
+  add('국내 정발', g.krPub ? `있음 · ${g.krPub}` : g.kr ? '있음 (한글 발매명 등록)' : '확인 안 됨');
   add('보유 / 위시', `${fmt(g.owned)} / ${fmt(g.wishing)}`);
   for (const off of [7, 30, 365]) {
     const dd = g.delta?.[off];
@@ -1360,6 +1474,17 @@ function openDrawer(g) {
       target: '_blank',
       rel: 'noopener',
       textContent: '보드라이프 검색 ↗',
+    }),
+    el('a', {
+      className: 'ghost-btn',
+      // 디시인사이드 부루마불 마이너 갤러리(부마갤). 국내 보드게임 논의가 모이는 곳이다.
+      // 제목+본문 검색이 s_type=search_subject_memo 다.
+      href: `https://gall.dcinside.com/mgallery/board/lists?id=bulemarble&s_type=search_subject_memo&s_keyword=${encodeURIComponent(
+        g.kor ?? g.name ?? ''
+      )}`,
+      target: '_blank',
+      rel: 'noopener',
+      textContent: '부마갤 검색 ↗',
     })
   );
 
@@ -1651,11 +1776,30 @@ function buildFilters() {
     }
   );
 
+  const lastRank = state.data.games.at(-1)?.rank ?? 1500;
   rangeInputs($('#rankRange'), 'rankMin', 'rankMax', {
     min: 1,
-    max: state.data.games.at(-1)?.rank ?? 1500,
+    max: lastRank,
     labelEl: $('#rankLabel'),
   });
+  // 1만 개를 한 줄씩 스크롤해 내려가는 대신 순위대를 바로 집는다.
+  // 수집 범위(LIMIT)를 줄여서 빌드하면 뒤쪽 구간은 빈 칩이 되므로 잘라낸다.
+  const rankBands = [
+    { label: 'TOP 100', values: [null, 100] },
+    { label: '~500', values: [null, 500] },
+    { label: '500–2000', values: [500, 2000] },
+    { label: '2000–5000', values: [2000, 5000] },
+    { label: `5000–${lastRank.toLocaleString('ko-KR')}`, values: [5000, null] },
+  ].filter((b) => (b.values[0] ?? 0) < lastRank);
+  quickChips(
+    $('#rankChips'),
+    rankBands,
+    (v) => {
+      f.rankMin = v ? v[0] : null;
+      f.rankMax = v ? v[1] : null;
+      $('#rankRange')._sync();
+    }
+  );
   rangeInputs($('#votesRange'), 'votesMin', 'votesMax', {
     min: 0,
     max: 200000,
@@ -1669,6 +1813,7 @@ function buildFilters() {
   for (const [id, key] of [
     ['risingOnly', 'risingOnly'],
     ['noTextOnly', 'noTextOnly'],
+    ['krOnly', 'krOnly'],
     ['myListOnly', 'myListOnly'],
     ['hideExcluded', 'hideExcluded'],
   ]) {
@@ -1785,12 +1930,14 @@ function toast(msg, undo = null) {
 }
 
 function exportCsv() {
-  const head = ['순위', '점수', '이름', '한글명', '연도', '난이도', '최소인원', '최대인원', '추천인원', '최소시간', '최대시간', 'BGG평점', '유저평점', '평가수', '30일변동'];
+  const head = ['순위', '점수', '이름', '한글명', '국내정발', '국내발매사', '연도', '난이도', '최소인원', '최대인원', '추천인원', '최소시간', '최대시간', 'BGG평점', '유저평점', '평가수', '30일변동'];
   const rows = state.view.map((g) => [
     g.rank,
     g._score100,
     g.name,
     g.kor ?? '',
+    g.kr ? 'O' : '',
+    g.krPub ?? '',
     g.year,
     g.weight,
     g.minPlayers,
@@ -1892,9 +2039,31 @@ async function main() {
     }, 160);
   };
 
+  applyViewMode();
+
   $('#tableWrap').onscroll = (e) => {
     const box = e.target;
     if (box.scrollTop + box.clientHeight > box.scrollHeight - 400) renderMore();
+    // 한참 내려왔을 때만 "맨 위로"를 띄운다
+    $('#toTop').hidden = box.scrollTop < 600;
+  };
+
+  $('#toTop').onclick = () => $('#tableWrap').scrollTo({ top: 0, behavior: 'smooth' });
+
+  $('#viewMode').onclick = (e) => {
+    const btn = e.target.closest('button[data-view]');
+    if (!btn || btn.dataset.view === state.viewMode) return;
+    state.viewMode = btn.dataset.view;
+    applyViewMode();
+    recompute();
+  };
+
+  // 사이드바를 접으면 표가 화면 전체 폭을 쓴다
+  const sidebarKey = 'lz.sidebar';
+  if (localStorage.getItem(sidebarKey) === 'off') $('#workspace').classList.add('solo');
+  $('#sidebarToggle').onclick = () => {
+    const solo = $('#workspace').classList.toggle('solo');
+    localStorage.setItem(sidebarKey, solo ? 'off' : 'on');
   };
 
   // 로고 = 처음 화면. 새로고침 대신 상태만 되돌려 즉시 반응하게 한다.

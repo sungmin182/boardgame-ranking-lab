@@ -38,6 +38,10 @@
     </header>
 
     <main>
+      <!-- 넓은 화면에서는 좌측(점수·필터) / 우측(결과) 두 칸으로 나뉜다.
+           1180px 아래에서는 예전처럼 위아래로 쌓인다. -->
+      <div class="workspace" id="workspace">
+      <aside class="sidebar" id="sidebar">
       <!-- ── 나만의 랭킹 점수 ───────────────────────────────── -->
       <section class="panel" id="scorePanel">
         <div class="panel-head">
@@ -92,6 +96,7 @@
           <div class="field">
             <label>BGG 순위 <span class="sub" id="rankLabel">전체</span></label>
             <div class="dual" id="rankRange"></div>
+            <div class="chips" id="rankChips"></div>
           </div>
 
           <div class="field">
@@ -120,6 +125,10 @@
               <span>게임 내 텍스트 없음 (언어 무관)</span>
             </label>
             <label class="check">
+              <input type="checkbox" id="krOnly" />
+              <span title="한글 발매명이 있거나 국내 발매사가 등록된 게임">국내 정발판이 있는 것만</span>
+            </label>
+            <label class="check">
               <input type="checkbox" id="myListOnly" />
               <span>내 목록(관심·보유)만</span>
             </label>
@@ -132,11 +141,26 @@
         </div>
       </section>
 
+      </aside>
+
       <!-- ── 결과 ──────────────────────────────────────────── -->
       <section class="panel results">
         <div class="panel-head">
-          <h2><span class="eyebrow">03</span>결과 <span class="count-badge" id="resultCount">–</span></h2>
+          <h2>
+            <button
+              id="sidebarToggle"
+              class="icon-btn"
+              title="점수·필터 패널 접기 / 펼치기"
+              aria-label="점수·필터 패널 접기"
+            >☰</button>
+            <span class="eyebrow">03</span>결과
+            <span class="count-badge" id="resultCount">–</span>
+          </h2>
           <div class="result-actions">
+            <div class="seg" id="viewMode" role="group" aria-label="보기 방식">
+              <button data-view="table" class="on">표</button>
+              <button data-view="cards">카드</button>
+            </div>
             <label class="check inline">
               <input type="checkbox" id="compactMode" />
               <span>간결히</span>
@@ -153,9 +177,18 @@
             </thead>
             <tbody id="tbody"></tbody>
           </table>
+          <div id="cards" class="card-grid" hidden></div>
           <div id="empty" class="empty" hidden>조건에 맞는 게임이 없습니다.</div>
+          <div id="sentinel" class="sentinel" hidden>더 불러오는 중…</div>
+        </div>
+
+        <!-- 1만 개를 훑을 때 "지금 어디쯤인지"를 알려주는 줄 -->
+        <div class="result-foot">
+          <span id="shownCount" class="sub">–</span>
+          <button id="toTop" class="ghost-btn" hidden>맨 위로 ↑</button>
         </div>
       </section>
+      </div>
     </main>
 
     <div id="drawer" class="drawer" hidden></div>

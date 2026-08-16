@@ -32,10 +32,17 @@ export async function build() {
   // data/korean-names.json 에 적힌 값이 있으면 그것으로 덮어쓴다(직접 고치기 위한 파일).
   const overrides = (await readJson(path.join(ROOT, 'data', 'korean-names.json'), {})) ?? {};
 
+  // 국내 발매사 목록 (data/kr-publishers.json). 비교는 소문자로 맞춰서 한다.
+  const krPubFile = await readJson(path.join(ROOT, 'data', 'kr-publishers.json'), {});
+  const krPubs = new Map(
+    (krPubFile?.publishers ?? []).map((name) => [name.toLowerCase(), name])
+  );
+
   const games = [];
   let missing = 0;
   let fromBgg = 0;
   let fromOverride = 0;
+  let krCount = 0;
 
   for (const r of ranks.games) {
     const d = await readJson(path.join(CACHE, `${r.id}.json`));
@@ -49,12 +56,23 @@ export async function build() {
     if (override) fromOverride++;
     else if (kor) fromBgg++;
 
+    // 국내 정발 판정: 한글 발매명이 있거나, 국내 발매사가 붙어 있거나.
+    // 둘 다 BGG가 갖고 있는 자료다(국내 사이트를 긁지 않는다).
+    const krPub = (d.publishers ?? [])
+      .map((p) => krPubs.get(p?.toLowerCase?.()))
+      .find(Boolean) ?? null;
+    const kr = Boolean(kor || krPub);
+    if (kr) krCount++;
+
     games.push({
       id: r.id,
       name: d.name ?? r.name,
       kor,
       // 검색용 별칭(변형판 이름 등). 대표 이름과 겹치는 것은 뺀다.
       korAlt: (d.korNames ?? []).filter((n) => n !== kor),
+      // 국내 정발 여부와, 근거가 된 발매사 이름
+      kr,
+      krPub,
       year: d.year ?? r.year,
       rank: r.rank,
       href: d.href ?? r.url,
@@ -123,6 +141,9 @@ export async function build() {
   );
   console.log(
     `[build] 한글명 ${fromBgg + fromOverride}개 (BGG ${fromBgg} + 직접 지정 ${fromOverride})`
+  );
+  console.log(
+    `[build] 국내 정발로 판정 ${krCount}개 (한글명 또는 국내 발매사 ${krPubs.size}곳 기준)`
   );
   // 상위 100위권은 대부분 정발되어 있어 BGG 한글명이 붙는다. 0에 가까우면
   // 상세 캐시가 옛 형식이라는 뜻이다(CI 캐시 복원 사고가 실제로 있었다).
