@@ -50,6 +50,10 @@
   --series-3: #1baf7a;
   --series-4: #eda100;
 
+  /* 강조색으로 채운 버튼 위에 올릴 글자색.
+     다크에서는 강조색이 밝아져서 흰 글자를 얹으면 대비가 무너진다. */
+  --on-fill: #ffffff;
+
   --shadow-sm: 0 1px 2px rgba(28, 26, 23, 0.05);
   --shadow: 0 1px 3px rgba(28, 26, 23, 0.07), 0 6px 16px -6px rgba(28, 26, 23, 0.1);
   --shadow-lg: 0 12px 40px -12px rgba(28, 26, 23, 0.28);
@@ -98,6 +102,8 @@
     --series-3: #199e70;
     --series-4: #c98500;
 
+    --on-fill: #10130f;
+
     --shadow-sm: none;
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
     --shadow-lg: 0 16px 48px -12px rgba(0, 0, 0, 0.6);
@@ -141,6 +147,8 @@
   --series-2: #d95926;
   --series-3: #199e70;
   --series-4: #c98500;
+
+  --on-fill: #10130f;
 
   --shadow-sm: none;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
@@ -1102,15 +1110,27 @@ tbody tr:hover .row-actions,
   color: var(--accent);
 }
 
-/* 방출(○)은 "이제 없다"는 뜻이므로 보유(●)와 같은 강조색을 주지 않는다.
-   나란히 있는 두 버튼이 같은 색이면 어느 상태인지 구분되지 않는다. */
+/*
+ * 네 표시는 서로 다른 색을 갖는다. 나란히 붙어 있어서 회색 두 개나
+ * 초록 두 개가 섞이면 무엇이 켜져 있는지 한눈에 안 들어온다.
+ *
+ *   관심 ★  금색   — 갖고 싶은 것
+ *   보유 ●  초록   — 지금 있는 것
+ *   방출 ○  빨강   — 있었지만 내보낸 것
+ *   제외 ✕  회색   — 목록에서 숨기기만 하는 것(수집과 무관하므로 가장 약하게)
+ */
+.flag[data-flag='want'].on {
+  color: var(--medal-1);
+}
+
 .flag[data-flag='gone'].on {
-  color: var(--text-dim);
-  background: var(--surface-3);
+  color: var(--down);
+  background: var(--down-soft);
 }
 
 .flag[data-flag='skip'].on {
-  color: var(--down);
+  color: var(--text-dim);
+  background: var(--surface-3);
 }
 
 .row-actions:has(.flag.on) {
@@ -1184,7 +1204,9 @@ tbody tr:hover .row-actions,
   box-shadow: var(--shadow-lg);
   padding: 20px 22px 48px;
   overflow-y: auto;
-  z-index: 50;
+  /* 서재(.compare-view, 70)보다 위에 뜬다. 서재에서 게임을 눌렀을 때
+     랭킹 화면으로 튕겨나가지 않고 서재 위에 그대로 열리게 하기 위해서다. */
+  z-index: 80;
   scrollbar-width: thin;
 }
 
@@ -2043,23 +2065,31 @@ body.resizing {
   color: var(--accent);
 }
 
-/* 표의 아이콘 버튼과 같은 색 규칙을 따른다 */
+/* 표의 아이콘 버튼과 같은 색 규칙을 따른다 (관심 금색 / 보유 초록 /
+   방출 빨강 / 제외 회색). 켜진 것은 채워서 확실히 구분한다. */
 .drawer-flag.on {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-fill);
+}
+
+.drawer-flag[data-flag='want'].on {
+  background: var(--medal-1);
+  border-color: var(--medal-1);
+  /* 금색은 라이트·다크 모두 밝아서 항상 어두운 글자를 얹는다 */
+  color: #1c1a17;
 }
 
 .drawer-flag[data-flag='gone'].on {
-  background: var(--surface-3);
-  border-color: var(--border-strong);
-  color: var(--text-2);
+  background: var(--down);
+  border-color: var(--down);
+  color: var(--on-fill);
 }
 
 .drawer-flag[data-flag='skip'].on {
-  background: var(--down);
-  border-color: var(--down);
-  color: #fff;
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+  color: var(--text-2);
 }
 
 /* ── 내 기록 ────────────────────────────────────────────── */
@@ -2292,6 +2322,39 @@ body.resizing {
   border-color: var(--accent);
   color: var(--accent);
   background: var(--accent-soft);
+}
+
+/*
+ * 목록마다 색을 달리한다. 화면을 아래로 훑을 때 구역이 바뀐 것을 제목을
+ * 다시 읽지 않고도 알 수 있어야 한다. 표시 버튼과 같은 색 규칙을 쓴다.
+ */
+.shelf-links.tone-own .shelf-link {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.shelf-links.tone-gone .shelf-link {
+  border-color: color-mix(in srgb, var(--down) 35%, var(--border));
+  background: var(--down-soft);
+  color: var(--down);
+}
+
+.shelf-links.tone-gone .shelf-link:hover {
+  border-color: var(--down);
+  background: var(--down-soft);
+  color: var(--down);
+}
+
+.shelf-links.tone-want .shelf-link {
+  border-color: color-mix(in srgb, var(--medal-1) 35%, var(--border));
+  color: color-mix(in srgb, var(--medal-1) 80%, var(--text));
+}
+
+.shelf-links.tone-want .shelf-link:hover {
+  border-color: var(--medal-1);
+  background: color-mix(in srgb, var(--medal-1) 12%, transparent);
+  color: color-mix(in srgb, var(--medal-1) 80%, var(--text));
 }
 
 .shelf-backup {

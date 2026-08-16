@@ -851,6 +851,8 @@ function openCompare() {
     view.hidden = true;
     return;
   }
+  // 상세 패널은 비교 화면보다 위에 뜨므로(서재 위에 겹치기 위해) 여기서 닫는다
+  $('#drawer').hidden = true;
 
   // 계열색은 CSS 토큰에서 읽는다. 라이트/다크 각각 dataviz 검증을 통과한 값이라
   // 테마가 바뀌면 그에 맞는 단계가 자동으로 적용된다.
@@ -1722,6 +1724,16 @@ function openDrawer(g) {
 
 /* ── 내 기록 편집 ─────────────────────────────────────── */
 
+/**
+ * 서재가 열려 있으면 다시 그린다.
+ *
+ * 서재 위에 상세 패널을 겹쳐 띄우므로, 거기서 표시나 기록을 바꾸면 뒤에 있는
+ * 서재의 목록·통계가 옛것이 된다. 패널을 닫았을 때 바로 맞게 보이도록 갱신한다.
+ */
+function refreshShelfIfOpen() {
+  if (!$('#shelfView').hidden) openShelf();
+}
+
 /** 표시 종류. 표의 작은 아이콘 버튼과 상세 패널의 큰 버튼이 같은 목록을 쓴다. */
 const FLAG_KINDS = [
   { type: 'want', glyph: '★', label: '관심' },
@@ -1756,6 +1768,7 @@ function drawerFlags(g) {
           saveFlags();
           paint();
           recompute();
+          refreshShelfIfOpen();
         };
         return btn;
       })
@@ -1839,6 +1852,7 @@ function noteSection(g) {
     autoShowNoteColumns();
     recompute();
     paint();
+    refreshShelfIfOpen();
   };
 
   const paint = () => {
@@ -2184,17 +2198,18 @@ function openShelf() {
     );
 
   /** 게임 목록을 눌러서 바로 상세로 갈 수 있게 */
-  const gameLinks = (ids, suffix = () => '') =>
+  const gameLinks = (ids, suffix = () => '', tone = '') =>
     el(
       'div',
-      { className: 'shelf-links' },
+      { className: `shelf-links${tone ? ` tone-${tone}` : ''}` },
       ...ids.slice(0, 24).map((item) => {
         const id = item.id ?? item;
         const btn = el('button', { className: 'shelf-link', textContent: titleOf(id) + suffix(item) });
         btn.onclick = () => {
           const g = gameById(id);
           if (!g) return toast('이 게임은 아직 수집 범위 밖입니다');
-          view.hidden = true;
+          // 서재를 닫지 않는다. 닫으면 뒤에 있던 랭킹 화면으로 튕겨나가서,
+          // 서재에서 게임 하나를 보고 다시 목록으로 돌아오는 흐름이 끊긴다.
           openDrawer(g);
         };
         return btn;
@@ -2227,7 +2242,7 @@ function openShelf() {
               : null
           ),
           note ? el('p', { className: 'sub', textContent: note }) : null,
-          gameLinks(ids, suffix)
+          gameLinks(ids, suffix, listKey)
         )
       : null;
 
