@@ -1250,13 +1250,18 @@ function externalLink(key, name) {
   if (isMobile() && conf.copyName) {
     a.textContent = `${conf.label} (이름 복사) ↗`;
     a.href = web;
-    a.onclick = async () => {
+    a.onclick = async (e) => {
+      /*
+       * 복사가 끝나기 전에 페이지가 넘어가면 클립보드에 아무것도 안 남는다.
+       * 기본 이동을 막고, 복사가 끝난 뒤에 직접 넘긴다.
+       */
+      e.preventDefault();
       try {
         await navigator.clipboard.writeText(q);
-        toast(`「${q}」 복사됨 · 당근 앱 검색창에 붙여넣으세요`);
       } catch {
-        /* 클립보드를 못 쓰면 그냥 웹으로 넘어간다 */
+        /* 권한이 없거나 지원하지 않으면 복사 없이 넘어간다 */
       }
+      location.href = web;
     };
     return a;
   }
