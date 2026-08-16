@@ -1275,22 +1275,30 @@ function externalLink(key, name) {
    */
   if (isMobile() && conf.copyName) {
     /*
-     * 앱으로 갈 수 없는 곳(당근)에서는 이름만 복사하고 아무 데도 가지 않는다.
+     * 앱의 검색 화면으로는 갈 수 없는 곳(당근)에서 쓰는 방식.
      *
-     * 웹을 띄워봐야 앱보다 기능이 적어 결국 앱으로 다시 넘어가야 한다.
-     * 화면을 옮기지 않으면 보던 목록이 그대로 남아, 최근 앱으로 당근에
-     * 넘어가 붙여넣고 돌아오는 흐름이 끊기지 않는다.
-     * 웹으로 보고 싶을 때를 위해 알림에 버튼 하나를 남겨 둔다.
+     * 이름을 복사한 뒤 앱 쪽으로 넘긴다. 검색어까지 들고 갈 수는 없으므로
+     * 앱에서 붙여넣게 된다. 그래도 폰 자판으로 긴 이름을 다시 치는 일은 없다.
+     *
+     * androidOpen 이 있으면 그리로(플레이스토어의 당근 페이지 → "열기"),
+     * 없으면 복사만 하고 화면을 옮기지 않는다.
      */
-    a.textContent = `${conf.label}용 이름 복사`;
+    const goTo = isAndroid() && conf.androidOpen ? conf.androidOpen : null;
+    a.textContent = goTo ? `${conf.label} (이름 복사 후 앱)` : `${conf.label}용 이름 복사`;
     a.href = web; // 길게 눌러 "새 탭으로 열기" 같은 기본 동작은 살려 둔다
     a.onclick = async (e) => {
       e.preventDefault();
       const copied = await copyText(q);
-      toast(
-        copied ? `「${q}」 복사됨 · 당근 앱에서 붙여넣으세요` : `복사하지 못했습니다 · ${q}`,
-        { label: '웹으로 열기', action: () => (location.href = web) }
-      );
+      if (goTo) {
+        // 복사가 끝난 뒤에 넘긴다. 먼저 넘기면 클립보드에 아무것도 안 남는다.
+        toast(copied ? `「${q}」 복사됨 · 앱에서 붙여넣으세요` : `복사 실패 · ${q}`);
+        location.href = goTo;
+        return;
+      }
+      toast(copied ? `「${q}」 복사됨 · 당근 앱에서 붙여넣으세요` : `복사하지 못했습니다 · ${q}`, {
+        label: '웹으로 열기',
+        action: () => (location.href = web),
+      });
     };
     return a;
   }
