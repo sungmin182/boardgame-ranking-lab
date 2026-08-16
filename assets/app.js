@@ -13,6 +13,24 @@ const CONFIG = window.LZ_CONFIG ?? {};
 const TERMS = window.LZ_TERMS ?? { categories: {}, mechanics: {} };
 
 /**
+ * 배포 번호. 배포 스크립트가 index.html 을 `assets/app.js?v=<번호>` 로 바꾸므로
+ * 여기서 그 번호를 되읽을 수 있다.
+ *
+ * 데이터 주소에도 같은 번호를 붙인다. 자산에만 붙이고 data/games.json 에는
+ * 붙이지 않으면, 새 코드가 브라우저에 캐시된 옛 데이터를 읽는다.
+ * GitHub Pages 가 자산에 max-age=600 을 주기 때문에 매일 동기화한 결과가
+ * 한동안 화면에 안 나오는 일이 실제로 있었다(3604개를 배포했는데 3000개가 보였다).
+ * 로컬 개발에서는 ?v= 가 없으므로 그대로 둔다.
+ */
+const ASSET_VERSION = new URL(import.meta.url).searchParams.get('v');
+
+/** 배포 번호가 있으면 붙여서 캐시를 피한다 */
+function versioned(url) {
+  if (!ASSET_VERSION) return url;
+  return url + (url.includes('?') ? '&' : '?') + 'v=' + ASSET_VERSION;
+}
+
+/**
  * BGG 원어 용어를 한글 이름과 설명으로 바꾼다.
  * 사전에 없으면 원어를 그대로 쓴다(새 용어가 생겨도 화면이 비지 않는다).
  */
@@ -2058,7 +2076,7 @@ async function main() {
   initTheme();
   initDrawerResize();
 
-  const res = await fetch(CONFIG.DATA_URL ?? 'data/games.json');
+  const res = await fetch(versioned(CONFIG.DATA_URL ?? 'data/games.json'));
   if (!res.ok) {
     $('#stamp').textContent = 'data/games.json 을 불러오지 못했습니다. npm run sync 를 먼저 실행하세요.';
     return;
