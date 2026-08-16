@@ -54,6 +54,9 @@
      다크에서는 강조색이 밝아져서 흰 글자를 얹으면 대비가 무너진다. */
   --on-fill: #ffffff;
 
+  /* 별 모양. 마스크로 쓰기 때문에 색은 아래 요소가 정한다. */
+  --star-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.6l2.9 5.9 6.5.95-4.7 4.58 1.11 6.47L12 17.45l-5.81 3.05 1.11-6.47-4.7-4.58 6.5-.95z'/%3E%3C/svg%3E");
+
   --shadow-sm: 0 1px 2px rgba(28, 26, 23, 0.05);
   --shadow: 0 1px 3px rgba(28, 26, 23, 0.07), 0 6px 16px -6px rgba(28, 26, 23, 0.1);
   --shadow-lg: 0 12px 40px -12px rgba(28, 26, 23, 0.28);
@@ -2104,6 +2107,128 @@ body.resizing {
   font-variant-numeric: tabular-nums;
 }
 
+/* ── 별점 ───────────────────────────────────────────────
+ * 별 하나를 좌/우 두 칸으로 나눠 반 개(1점) 단위로 매긴다. */
+.stars-field {
+  margin-bottom: 12px;
+}
+
+.stars-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.stars {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.star {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  display: inline-block;
+  /* 빈 별 */
+  background: var(--surface-3);
+  -webkit-mask: var(--star-mask) center / contain no-repeat;
+  mask: var(--star-mask) center / contain no-repeat;
+}
+
+/* 채워지는 부분. data-fill 에 따라 폭이 0 / 50% / 100% 가 된다. */
+.star-fill {
+  position: absolute;
+  inset: 0;
+  width: 0;
+  background: var(--medal-1);
+  transition: width 0.08s linear;
+  pointer-events: none;
+}
+
+.star[data-fill='half'] .star-fill {
+  width: 50%;
+}
+
+.star[data-fill='full'] .star-fill {
+  width: 100%;
+}
+
+/* 클릭 영역 — 별 위에 좌우 절반씩 겹쳐 둔다 */
+.star-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.star-zone.left {
+  left: 0;
+}
+
+.star-zone.right {
+  right: 0;
+}
+
+.stars-num {
+  width: 62px;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.stars-clear {
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.stars-clear:hover {
+  color: var(--down);
+}
+
+.note-hint {
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+/* 선택형 입력(구입처·판매처) */
+.note-field select {
+  width: 100%;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.note-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.note-field input[hidden] {
+  display: none;
+}
+
 .note-section {
   margin-top: 16px;
   padding: 13px 14px 15px;
@@ -2297,6 +2422,36 @@ body.resizing {
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.shelf-section-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* 서재 안의 카드 격자 — 결과 화면보다 조금 작게 잡아 한 화면에 더 담는다 */
+.shelf-cards {
+  grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+  padding: 10px 0 0;
+}
+
+.shelf-cards .card-cover {
+  height: 112px;
+}
+
+.game-card.missing {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* 카드에 붙는 내 기록 값(구입가·손익·목표가) */
+.card-note-tag {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
 }
 
 .shelf-links {

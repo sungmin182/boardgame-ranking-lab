@@ -178,6 +178,9 @@ const DEFAULT_FILTERS = () => ({
 /** 한 번에 비교할 수 있는 게임 수 */
 const COMPARE_MAX = 4;
 
+/** 서재의 각 구역에 한 번에 그릴 카드 수. 넘치면 "결과 화면에서 보기"로 넘긴다. */
+const SHELF_CARD_MAX = 60;
+
 /* ── 내 기록 ──────────────────────────────────────────────
  * 게임별로 붙는 개인 자료. localStorage 의 lz.notes 에 통째로 들어간다.
  *
@@ -207,6 +210,7 @@ function saveNotes() {
       !n.memo &&
       !n.buy &&
       !n.sell &&
+      !n.playsExtra &&
       !(n.plays?.length);
     if (empty) delete notes[id];
   }
@@ -218,7 +222,30 @@ function noteFor(id) {
   return (notes[id] ??= {});
 }
 
-const playCount = (id) => noteOf(id)?.plays?.length ?? 0;
+/**
+ * 총 플레이 판수 = 자세히 적은 기록 + 세어만 둔 판수.
+ *
+ * 예전에 산 게임을 몇십 판씩 했는데 그걸 한 판씩 입력하게 하면 아무도 안 적는다.
+ * "총 몇 판" 숫자만 적어도 1판당 비용과 "아직 안 한 것"이 동작하도록,
+ * 날짜·승자까지 남기고 싶을 때만 아래 플레이 기록을 쓰게 나눠 두었다.
+ */
+const playCount = (id) => {
+  const n = noteOf(id);
+  return (n?.plays?.length ?? 0) + (n?.playsExtra ?? 0);
+};
+
+/** 판수를 총합으로 맞춘다. 자세한 기록은 건드리지 않고 나머지를 조정한다. */
+function setTotalPlays(id, total) {
+  const n = noteFor(id);
+  const logged = n.plays?.length ?? 0;
+  if (total == null) {
+    delete n.playsExtra;
+    return;
+  }
+  const extra = Math.max(0, Math.round(total) - logged);
+  if (extra) n.playsExtra = extra;
+  else delete n.playsExtra;
+}
 
 /** 마지막으로 플레이한 날짜 문자열. 기록이 없으면 null */
 function lastPlayed(id) {
@@ -975,7 +1002,9 @@ function renderCard(g) {
       el(
         'div',
         { className: 'card-badges' },
-        scorePill(g._score100),
+        // 점수는 지금 결과 집합 안에서만 계산된다. 서재처럼 결과 밖의 게임을
+        // 그릴 때는 값이 없으므로 생략한다(0.0 으로 보이면 오해를 부른다).
+        g._score100 != null ? scorePill(g._score100) : el('span', {}),
         el('span', { className: 'card-rank', textContent: g.rank ? `${g.rank}위` : '–' })
       )
     ),
@@ -1814,14 +1843,174 @@ const SELL_PLACES = [
   '폐기',
 ];
 
-/** 후보 목록을 담은 datalist 를 만들어 문서에 한 번만 심는다 */
-function ensureDatalist(id, values) {
-  let dl = document.getElementById(id);
-  if (dl) return id;
-  dl = el('datalist', { id });
-  dl.append(...values.map((v) => el('option', { value: v })));
-  document.body.append(dl);
-  return id;
+/**
+ * 직접 적어 넣은 구입처·판매처. 기본 목록에 이어 붙여 계속 고를 수 있게 남긴다.
+ *   { buy: ['학교 도서관 예산', …], sell: [...] }
+ */
+const places = JSON.parse(localStorage.getItem('lz.places') ?? '{"buy":[],"sell":[]}');
+
+function savePlaces() {
+  localStorage.setItem('lz.places', JSON.stringify(places));
+}
+
+/** 기본 후보 + 내가 추가한 것 */
+const placeOptions = (kind) => [
+  ...(kind === 'buy' ? BUY_PLACES : SELL_PLACES),
+  ...(places[kind] ?? []),
+];
+
+function addPlace(kind, value) {
+  if (!value) return;
+  if (placeOptions(kind).includes(value)) return;
+  (places[kind] ??= []).push(value);
+  savePlaces();
+}
+
+/**
+ * 목록에서 고르는 입력칸. 마지막 항목이 "직접 입력"이고,
+ * 새로 적은 값은 다음부터 목록에 그대로 남는다.
+ */
+function placeField(label, kind, value, onSet) {
+  const wrap = el('div', { className: 'note-field' }, el('span', { textContent: label }));
+  const select = el('select', {});
+  const custom = el('input', { type: 'text', placeholder: '새 항목 이름', hidden: true });
+
+  // "직접 입력" 항목을 가리키는 표식. 실제 구입처 이름과 겹치지 않을 값이어야 한다.
+  const ADD = '__직접입력__';
+
+  const fill = (selected) => {
+    setChildren(
+      select,
+      el('option', { value: '', textContent: '– 선택 –' }),
+      ...placeOptions(kind).map((v) =>
+        el('option', { value: v, textContent: v, selected: v === selected })
+      ),
+      el('option', { value: ADD, textContent: '+ 직접 입력…' })
+    );
+    select.value = selected && placeOptions(kind).includes(selected) ? selected : '';
+  };
+  fill(value);
+
+  select.onchange = () => {
+    if (select.value === ADD) {
+      custom.hidden = false;
+      custom.value = '';
+      custom.focus();
+      return;
+    }
+    custom.hidden = true;
+    onSet(select.value || null);
+  };
+
+  const commit = () => {
+    const v = custom.value.trim();
+    custom.hidden = true;
+    if (!v) {
+      fill(value);
+      return;
+    }
+    addPlace(kind, v);
+    fill(v);
+    onSet(v);
+  };
+  custom.onblur = commit;
+  custom.onkeydown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commit();
+    }
+    if (e.key === 'Escape') {
+      custom.hidden = true;
+      fill(value);
+    }
+  };
+
+  wrap.append(select, custom);
+  return wrap;
+}
+
+/**
+ * 별 다섯 개짜리 평점 입력. 반 개 단위라 0.5점씩, 최대 10점이다.
+ *
+ * 별 하나를 좌/우 두 칸으로 나눠 왼쪽은 반 개, 오른쪽은 한 개로 친다.
+ * 마우스를 올리면 그 지점까지 미리 채워 보여주고, 벗어나면 실제 값으로 돌아온다.
+ * 숫자를 직접 넣고 싶을 때를 위해 옆에 입력칸도 같이 둔다.
+ */
+function ratingStars(value, onSet) {
+  const box = el('div', { className: 'stars' });
+  const num = el('input', {
+    type: 'number',
+    className: 'stars-num',
+    min: 0,
+    max: 10,
+    step: 0.5,
+    value: value ?? '',
+    placeholder: '–',
+  });
+
+  let current = value ?? null;
+
+  const paint = (preview) => {
+    const shown = preview ?? current ?? 0;
+    for (const [i, star] of [...box.querySelectorAll('.star')].entries()) {
+      const filled = Math.max(0, Math.min(1, shown / 2 - i)); // 0, 0.5, 1
+      star.dataset.fill = filled >= 1 ? 'full' : filled >= 0.5 ? 'half' : 'none';
+    }
+    box.classList.toggle('previewing', preview != null);
+  };
+
+  for (let i = 0; i < 5; i++) {
+    const star = el('span', { className: 'star' }, el('span', { className: 'star-fill' }));
+    // 왼쪽 절반 = i*2+1 점, 오른쪽 절반 = i*2+2 점
+    for (const [half, score] of [
+      ['left', i * 2 + 1],
+      ['right', i * 2 + 2],
+    ]) {
+      const zone = el('button', {
+        className: `star-zone ${half}`,
+        title: `${score}점`,
+        type: 'button',
+      });
+      zone.onmouseenter = () => paint(score);
+      zone.onclick = (e) => {
+        e.stopPropagation();
+        // 같은 점수를 다시 누르면 지운다
+        current = current === score ? null : score;
+        num.value = current ?? '';
+        paint();
+        onSet(current);
+      };
+      star.append(zone);
+    }
+    box.append(star);
+  }
+
+  box.onmouseleave = () => paint();
+
+  num.onchange = () => {
+    const raw = num.value.trim();
+    const v = raw === '' ? null : Math.max(0, Math.min(10, Math.round(Number(raw) * 2) / 2));
+    current = v;
+    num.value = v ?? '';
+    paint();
+    onSet(v);
+  };
+
+  const clear = el('button', { className: 'stars-clear', textContent: '지우기', type: 'button' });
+  clear.onclick = () => {
+    current = null;
+    num.value = '';
+    paint();
+    onSet(null);
+  };
+
+  paint();
+  return el(
+    'div',
+    { className: 'note-field stars-field' },
+    el('span', { textContent: '내 평점 (별 반 개 = 1점, 최대 10점)' }),
+    el('div', { className: 'stars-row' }, box, num, clear)
+  );
 }
 
 /** 라벨 + 입력 한 쌍. 값이 바뀌면 note 에 바로 반영한다. */
@@ -1863,8 +2052,10 @@ function noteSection(g) {
     const since = daysSince(lastPlayed(g.id));
 
     // ── 요약 줄: 기록에서 바로 나오는 지표들
+    // 판수는 자세한 기록 + 세어만 둔 판수의 합이다(숫자만 적어도 잡힌다)
+    const total = playCount(g.id);
     const chips = [];
-    if (plays.length) chips.push(`${plays.length}판`);
+    if (total) chips.push(`${total}판`);
     if (since != null) chips.push(since === 0 ? '오늘 플레이' : `${since}일 전`);
     if (cpp != null) chips.push(`1판당 ${won(cpp)}`);
     if (pf != null) chips.push(`${pf >= 0 ? '이익' : '손해'} ${won(Math.abs(pf))}`);
@@ -1880,21 +2071,16 @@ function noteSection(g) {
           : null
       ),
 
-      // ── 평점 · 메모
+      // ── 평점
+      ratingStars(n.rating, (v) => {
+        n.rating = v;
+        rerender();
+      }),
+
+      // ── 가격 기준
       el(
         'div',
         { className: 'note-grid' },
-        noteField('내 평점 (0–10)', {
-          value: n.rating,
-          step: 0.5,
-          min: 0,
-          max: 10,
-          placeholder: '8.5',
-          onSet: (v) => {
-            n.rating = v;
-            rerender();
-          },
-        }),
         noteField('적정가 (내 기준)', {
           value: n.fair,
           placeholder: '45000',
@@ -1942,16 +2128,10 @@ function noteSection(g) {
             rerender();
           },
         }),
-        noteField('구입처', {
-          type: 'text',
-          value: n.buy?.from,
-          placeholder: '고르거나 직접 입력',
-          options: { id: 'dl-buy-places', values: BUY_PLACES },
-          onSet: (v) => {
-            n.buy = { ...n.buy, from: v };
-            if (n.buy.price == null && !n.buy.date && !n.buy.from) delete n.buy;
-            rerender();
-          },
+        placeField('구입처', 'buy', n.buy?.from, (v) => {
+          n.buy = { ...n.buy, from: v };
+          if (n.buy.price == null && !n.buy.date && !n.buy.from) delete n.buy;
+          rerender();
         })
       ),
 
@@ -1983,24 +2163,40 @@ function noteSection(g) {
             rerender();
           },
         }),
-        noteField('판매처', {
-          type: 'text',
-          value: n.sell?.to,
-          placeholder: '고르거나 직접 입력',
-          options: { id: 'dl-sell-places', values: SELL_PLACES },
+        placeField('판매처', 'sell', n.sell?.to, (v) => {
+          n.sell = { ...n.sell, to: v };
+          if (n.sell.price == null && !n.sell.date && !n.sell.to) delete n.sell;
+          rerender();
+        })
+      ),
+
+      // ── 플레이 판수 (숫자만 적어도 되는 칸)
+      el('div', { className: 'note-label' }, '플레이'),
+      el(
+        'div',
+        { className: 'note-grid' },
+        noteField('총 몇 판 했나', {
+          value: playCount(g.id) || null,
+          min: 0,
+          placeholder: '0',
           onSet: (v) => {
-            n.sell = { ...n.sell, to: v };
-            if (n.sell.price == null && !n.sell.date && !n.sell.to) delete n.sell;
+            setTotalPlays(g.id, v);
             rerender();
           },
         })
       ),
+      el('p', {
+        className: 'sub note-hint',
+        textContent: plays.length
+          ? `아래 자세한 기록 ${plays.length}판이 이 숫자에 포함됩니다.`
+          : '숫자만 적어도 1판당 비용과 "아직 안 한 것"이 계산됩니다. 날짜·승자까지 남기려면 아래에 기록하세요.',
+      }),
 
-      // ── 플레이 기록
+      // ── 자세한 플레이 기록
       el(
         'div',
         { className: 'note-label with-action' },
-        el('span', { textContent: `플레이 기록 ${plays.length ? `(${plays.length}판)` : ''}` }),
+        el('span', { textContent: `자세한 기록 ${plays.length ? `(${plays.length}판)` : ''}` }),
         (() => {
           const add = el('button', { className: 'ghost-btn', textContent: '+ 오늘 한 판' });
           add.onclick = () => {
@@ -2011,6 +2207,8 @@ function noteSection(g) {
               minutes: g.maxTime ?? null,
               note: '',
             });
+            // 자세한 기록을 더하면 총 판수도 같이 늘어야 한다.
+            // (playsExtra 는 "세어만 둔 나머지"이므로 건드리지 않는다)
             rerender();
           };
           return add;
@@ -2018,7 +2216,7 @@ function noteSection(g) {
       ),
       plays.length
         ? el('div', { className: 'play-list' }, ...plays.map((p, i) => playRow(n, p, i, rerender)))
-        : el('p', { className: 'sub', textContent: '아직 기록이 없습니다.' }),
+        : null,
 
       // ── 자유 메모
       el('div', { className: 'note-label' }, '메모'),
@@ -2224,27 +2422,90 @@ function openShelf() {
    * 세기에는 좋지만 표지가 없어 훑어보기에는 불편하다. 그 버튼을 누르면
    * 결과 화면이 그 목록만 담은 상태가 되어, 평소처럼 카드/표로 볼 수 있다.
    */
-  const listSection = (title, ids, note, suffix, listKey) =>
-    ids.length
-      ? el(
-          'section',
-          {},
-          el(
-            'div',
-            { className: 'shelf-section-head' },
-            el('h3', { textContent: `${title} (${ids.length})` }),
-            listKey
-              ? (() => {
-                  const b = el('button', { className: 'ghost-btn', textContent: '카드로 보기 →' });
-                  b.onclick = () => showListInResults(listKey);
-                  return b;
-                })()
-              : null
-          ),
-          note ? el('p', { className: 'sub', textContent: note }) : null,
-          gameLinks(ids, suffix, listKey)
+  const listSection = (title, ids, note, suffix, listKey) => {
+    if (!ids.length) return null;
+
+    const body = el('div', {});
+    // 목록 ↔ 카드 전환. 어느 쪽으로 봤는지는 다음에 열 때도 유지된다.
+    const modeKey = `lz.shelfView.${listKey ?? title}`;
+    let asCards = localStorage.getItem(modeKey) !== 'list';
+
+    const toggle = el('button', { className: 'ghost-btn' });
+
+    const paint = () => {
+      toggle.textContent = asCards ? '목록으로' : '카드로';
+      localStorage.setItem(modeKey, asCards ? 'cards' : 'list');
+      setChildren(
+        body,
+        asCards ? shelfCards(ids, suffix) : gameLinks(ids, suffix, listKey)
+      );
+    };
+
+    toggle.onclick = () => {
+      asCards = !asCards;
+      paint();
+    };
+    paint();
+
+    return el(
+      'section',
+      {},
+      el(
+        'div',
+        { className: 'shelf-section-head' },
+        el('h3', { textContent: `${title} (${ids.length})` }),
+        el(
+          'div',
+          { className: 'shelf-section-actions' },
+          toggle,
+          listKey
+            ? (() => {
+                const b = el('button', { className: 'ghost-btn', textContent: '결과 화면에서 보기 →' });
+                b.onclick = () => showListInResults(listKey);
+                return b;
+              })()
+            : null
         )
-      : null;
+      ),
+      note ? el('p', { className: 'sub', textContent: note }) : null,
+      body
+    );
+  };
+
+  /**
+   * 서재 안에서 표지 카드로 보여준다.
+   *
+   * 이름만 늘어놓은 칩은 개수를 세기엔 좋지만 표지가 없어 고르기 어렵다.
+   * 결과 화면의 카드를 그대로 쓰되, 점수는 지금 화면의 필터 결과에서만
+   * 계산되므로(서재 게임은 걸러져 있을 수 있다) 없으면 생략한다.
+   */
+  const shelfCards = (ids, suffix = () => '') => {
+    const shown = ids.slice(0, SHELF_CARD_MAX);
+    const grid = el(
+      'div',
+      { className: 'card-grid shelf-cards' },
+      ...shown.map((item) => {
+        const id = item.id ?? item;
+        const g = gameById(id);
+        if (!g) {
+          return el('div', { className: 'game-card missing' }, el('div', { className: 'card-body' },
+            el('div', { className: 'card-title', textContent: titleOf(id) }),
+            el('div', { className: 'card-sub', textContent: '수집 범위 밖' })));
+        }
+        const card = renderCard(g);
+        const tag = suffix(item);
+        if (tag) {
+          card.querySelector('.card-stats')?.prepend(
+            el('span', { className: 'card-note-tag', textContent: tag.replace(/^ · /, '') })
+          );
+        }
+        return card;
+      })
+    );
+    return ids.length > SHELF_CARD_MAX
+      ? el('div', {}, grid, el('p', { className: 'sub', textContent: `외 ${ids.length - SHELF_CARD_MAX}개 — "결과 화면에서 보기"로 전부 볼 수 있습니다.` }))
+      : grid;
+  };
 
   const priceTag = (id) => {
     const p = notes[id]?.buy?.price;
