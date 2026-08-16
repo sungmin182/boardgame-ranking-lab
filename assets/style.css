@@ -301,21 +301,42 @@ h3 {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-.icon-btn {
-  width: 36px;
+/* 화면 모드 버튼 — 아이콘만 두면 눈에 띄지 않아 현재 상태를 글자로 함께 보여준다 */
+.theme-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   height: 36px;
+  padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface-2);
   color: var(--text-2);
-  font-size: 15px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
   transition: border-color 0.15s, color 0.15s;
 }
 
-.icon-btn:hover {
+.theme-btn:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.theme-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+@media (max-width: 760px) {
+  .theme-label {
+    display: none;
+  }
+  .theme-btn {
+    padding: 0 11px;
+  }
 }
 
 /* ── 레이아웃 ───────────────────────────────────────────── */
@@ -1029,6 +1050,94 @@ tbody tr:hover .row-actions,
   gap: 6px;
   flex-wrap: wrap;
   margin: 14px 0;
+}
+
+/* ── BGG 리뷰 ───────────────────────────────────────────── */
+.review-section {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 2px solid var(--border);
+}
+
+.review-section h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.review {
+  padding: 11px 12px;
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.review-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+}
+
+.review-score {
+  min-width: 34px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 800;
+  text-align: center;
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+
+.review-score.high {
+  background: var(--up-soft);
+  color: var(--up);
+}
+
+.review-score.mid {
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+
+.review-score.low {
+  background: var(--down-soft);
+  color: var(--down);
+}
+
+.review-user {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-country {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.review-body {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  /* 원문 전체를 옮겨 싣지 않는다. 넘치면 접고 링크로 보낸다. */
+  max-height: 9.5em;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(180deg, #000 72%, transparent);
+  mask-image: linear-gradient(180deg, #000 72%, transparent);
+}
+
+.reviews > .ghost-btn {
+  display: inline-block;
+  margin-top: 12px;
+  text-decoration: none;
 }
 
 .drawer-actions a {

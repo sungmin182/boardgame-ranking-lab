@@ -30,6 +30,10 @@ const ROUTES = {
     `https://api.geekdo.com/api/dynamicinfo?objectid=${p.objectid}&objecttype=thing`,
   '/geekitems': (p) =>
     `https://api.geekdo.com/api/geekitems?objectid=${p.objectid}&objecttype=thing&subtype=boardgame`,
+  // 평점과 함께 남긴 코멘트. BGG 사이트의 ratings 탭이 쓰는 것과 같은 엔드포인트다.
+  '/comments': (p) =>
+    `https://api.geekdo.com/api/collections?objectid=${p.objectid}&objecttype=thing` +
+    `&rated=1&comment=1&pageid=1&sort=review_tstamp`,
 };
 
 function cors(origin) {
@@ -66,10 +70,13 @@ export default {
       });
     }
 
+    // 같은 게임을 연달아 눌러도 BGG를 계속 때리지 않도록 캐시한다.
+    // 코멘트는 순위·평점보다 훨씬 천천히 바뀌므로 더 오래 둔다.
+    const ttl = url.pathname === '/comments' ? 1800 : 300;
+
     const upstream = await fetch(build({ objectid }), {
       headers: { 'User-Agent': 'BoardgameRankingLab/1.0 (personal site)' },
-      // 같은 게임을 연달아 눌러도 BGG를 계속 때리지 않도록 5분 캐시
-      cf: { cacheTtl: 300, cacheEverything: true },
+      cf: { cacheTtl: ttl, cacheEverything: true },
     });
 
     return new Response(upstream.body, {
@@ -77,7 +84,7 @@ export default {
       headers: {
         ...headers,
         'Content-Type': 'application/json; charset=utf-8',
-        'Cache-Control': 'public, max-age=300',
+        'Cache-Control': `public, max-age=${ttl}`,
       },
     });
   },

@@ -859,6 +859,86 @@ function sparkline(g) {
   return svg;
 }
 
+/* ── BGG 리뷰 ─────────────────────────────────────────────
+ * 클릭했을 때만 불러온다. 표에 3000개를 미리 담아두지 않는 이유는
+ * 남의 사이트 글을 통째로 복사해 두지 않기 위해서다. 화면에는 앞부분만
+ * 보여주고, 전체는 원문 링크로 넘긴다. */
+const REVIEW_COUNT = 10;
+const REVIEW_MIN_LEN = 80;
+const reviewCache = new Map();
+
+async function loadReviews(g, box) {
+  if (!CONFIG.LIVE_PROXY) return;
+
+  box.replaceChildren(el('p', { className: 'sub', textContent: '리뷰를 불러오는 중…' }));
+  try {
+    let items = reviewCache.get(g.id);
+    if (!items) {
+      const res = await fetch(`${CONFIG.LIVE_PROXY}/comments?objectid=${g.id}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      items = (json.items ?? [])
+        .map((i) => ({
+          user: i.user?.username ?? '(알 수 없음)',
+          country: i.user?.country ?? '',
+          rating: Number(i.rating),
+          text: (i.textfield?.comment?.value ?? '').trim(),
+        }))
+        .filter((r) => r.text);
+      reviewCache.set(g.id, items);
+    }
+
+    // "충실한 것"의 기준: 한 줄 감상은 빼고 긴 글부터. 길이가 완벽한 잣대는
+    // 아니지만, 별점만 남긴 코멘트를 걸러내는 데는 충분하다.
+    const picked = items
+      .filter((r) => r.text.length >= REVIEW_MIN_LEN)
+      .sort((a, b) => b.text.length - a.text.length)
+      .slice(0, REVIEW_COUNT);
+
+    const list = picked.length ? picked : items.slice(0, REVIEW_COUNT);
+
+    if (!list.length) {
+      box.replaceChildren(el('p', { className: 'sub', textContent: '등록된 리뷰가 없습니다.' }));
+      return;
+    }
+
+    box.replaceChildren(
+      el('p', {
+        className: 'sub',
+        textContent: `평가 ${items.length}개 중 내용이 있는 ${list.length}개 · BGG 이용자가 쓴 글입니다`,
+      }),
+      ...list.map((r) =>
+        el(
+          'article',
+          { className: 'review' },
+          el(
+            'div',
+            { className: 'review-head' },
+            el('span', {
+              className: `review-score ${r.rating >= 8 ? 'high' : r.rating >= 6 ? 'mid' : 'low'}`,
+              textContent: Number.isFinite(r.rating) ? r.rating.toFixed(1) : '–',
+            }),
+            el('span', { className: 'review-user', textContent: r.user }),
+            r.country ? el('span', { className: 'review-country', textContent: r.country }) : null
+          ),
+          el('p', { className: 'review-body', textContent: r.text })
+        )
+      ),
+      el('a', {
+        className: 'ghost-btn',
+        href: `https://boardgamegeek.com/boardgame/${g.id}/ratings?rated=1&comment=1`,
+        target: '_blank',
+        rel: 'noopener',
+        textContent: 'BGG에서 전체 리뷰 보기 ↗',
+      })
+    );
+  } catch {
+    box.replaceChildren(
+      el('p', { className: 'sub', textContent: '리뷰를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.' })
+    );
+  }
+}
+
 function openDrawer(g) {
   const d = $('#drawer');
   d.hidden = false;
@@ -942,6 +1022,16 @@ function openDrawer(g) {
     actions.append(btn);
   }
 
+  const reviewBox = el('div', { className: 'reviews' });
+  const reviewSection = CONFIG.LIVE_PROXY
+    ? el(
+        'section',
+        { className: 'review-section' },
+        el('h4', { textContent: 'BGG 리뷰' }),
+        reviewBox
+      )
+    : null;
+
   d.replaceChildren(
     close,
     el('h3', { textContent: g.kor ?? g.name ?? '' }),
@@ -962,8 +1052,11 @@ function openDrawer(g) {
           el('div', { className: 'sub', style: 'margin-top:10px' }, '분야별 순위'),
           el('div', { className: 'taglist' }, ...g.subranks.map((s) => el('span', { textContent: `${s.name} ${s.rank}위` })))
         )
-      : null
+      : null,
+    reviewSection
   );
+
+  if (CONFIG.LIVE_PROXY) loadReviews(g, reviewBox);
 }
 
 /* ── UI 구성 ──────────────────────────────────────────── */
@@ -1330,17 +1423,39 @@ function exportCsv() {
   URL.revokeObjectURL(url);
 }
 
+/* ── 화면 모드 ────────────────────────────────────────────
+ * 시스템 → 라이트 → 다크 순으로 도는 3단계. 예전에는 라이트/다크만
+ * 오갔는데, 그러면 한번 누른 뒤로는 기기 설정을 다시 따라갈 수 없었다. */
+const THEMES = [
+  { key: 'system', label: '시스템', icon: '◐' },
+  { key: 'light', label: '라이트', icon: '☀' },
+  { key: 'dark', label: '다크', icon: '☾' },
+];
+
+function applyTheme(key) {
+  if (key === 'system') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = key;
+
+  const t = THEMES.find((x) => x.key === key) ?? THEMES[0];
+  const btn = $('#themeToggle');
+  if (btn) {
+    btn.querySelector('.theme-icon').textContent = t.icon;
+    btn.querySelector('.theme-label').textContent = t.label;
+    btn.title = `화면 모드: ${t.label} (눌러서 전환)`;
+    btn.setAttribute('aria-label', btn.title);
+  }
+}
+
 function initTheme() {
   const saved = localStorage.getItem('lz.theme');
-  if (saved) document.documentElement.dataset.theme = saved;
+  let current = THEMES.some((t) => t.key === saved) ? saved : 'system';
+  applyTheme(current);
+
   $('#themeToggle').onclick = () => {
-    const isDark =
-      document.documentElement.dataset.theme === 'dark' ||
-      (!document.documentElement.dataset.theme &&
-        matchMedia('(prefers-color-scheme: dark)').matches);
-    const next = isDark ? 'light' : 'dark';
-    document.documentElement.dataset.theme = next;
-    localStorage.setItem('lz.theme', next);
+    const i = THEMES.findIndex((t) => t.key === current);
+    current = THEMES[(i + 1) % THEMES.length].key;
+    localStorage.setItem('lz.theme', current);
+    applyTheme(current);
   };
 }
 
