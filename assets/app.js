@@ -1371,6 +1371,31 @@ function loadUrl() {
 }
 
 /* ── 기타 액션 ────────────────────────────────────────── */
+
+/** 필터·가중치·정렬·검색을 처음 상태로 되돌린다 */
+function goHome() {
+  state.filters = DEFAULT_FILTERS();
+  state.weights = { ...PRESETS['긱 기본'] };
+  state.sort = { key: 'score', dir: -1 };
+  state.compare = [];
+
+  $('#drawer').hidden = true;
+  $('#compareView').hidden = true;
+  $('#search').value = '';
+  $('#compactMode').checked = false;
+  document.body.classList.remove('compact');
+
+  buildFilters();
+  syncSliders();
+  markPreset();
+  renderHead();
+  refreshCompareUi();
+  recompute();
+
+  $('#tableWrap').scrollTop = 0;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 function toast(msg, undo = null) {
   const t = $('#toast');
   t.replaceChildren(el('span', { textContent: msg }));
@@ -1501,6 +1526,15 @@ async function main() {
   $('#tableWrap').onscroll = (e) => {
     const box = e.target;
     if (box.scrollTop + box.clientHeight > box.scrollHeight - 400) renderMore();
+  };
+
+  // 로고 = 처음 화면. 새로고침 대신 상태만 되돌려 즉시 반응하게 한다.
+  // 관심·보유·제외 목록은 내가 만든 자료이므로 건드리지 않는다.
+  $('#homeLink').onclick = (e) => {
+    // 새 탭으로 열기(ctrl/cmd/가운데 버튼)는 그대로 둔다
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    goHome();
   };
 
   $('#compactMode').onchange = (e) => document.body.classList.toggle('compact', e.target.checked);
