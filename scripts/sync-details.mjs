@@ -20,7 +20,7 @@ const CACHE = path.join(ROOT, 'cache', 'details');
  * 유효기간이 남아 있어도 버리고 다시 받는다. 이게 없으면 CI가 복원한 옛 캐시
  * 때문에 새 필드가 영영 채워지지 않는다(실제로 korNames 추가 때 그랬다).
  */
-const SCHEMA = 2;
+const SCHEMA = 3;
 
 const GEEKITEMS = (id) =>
   `https://api.geekdo.com/api/geekitems?objectid=${id}&objecttype=thing&subtype=boardgame`;
@@ -74,7 +74,9 @@ export function normalize(id, item, dyn) {
     korNames: koreanNames(item),
     year: n(item?.yearpublished),
     desc: item?.short_description ?? null,
-    image: item?.images?.square200 ?? item?.imageurl ?? null,
+    // square200 은 /200x200/ 정사각 크롭이라 가로로 긴 표지의 양옆이 잘린다.
+    // imageurl@2x 는 fit-in/492x600 이라 비율을 지키고 해상도도 충분하다.
+    image: item?.['imageurl@2x'] ?? item?.imageurl ?? item?.images?.previewthumb ?? null,
     href: item?.href ?? null,
 
     minPlayers: n(item?.minplayers),

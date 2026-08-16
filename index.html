@@ -5,16 +5,31 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>보드게임 랭킹 랩</title>
     <meta name="description" content="BGG 데이터를 내 방식대로 정렬하는 보드게임 랭킹 도구" />
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    />
     <link rel="stylesheet" href="assets/style.css" />
   </head>
   <body>
     <header class="topbar">
       <div class="brand">
-        <h1>보드게임 랭킹 랩</h1>
-        <span class="stamp" id="stamp">불러오는 중…</span>
+        <span class="brand-mark" aria-hidden="true">
+          <span class="pip"></span><span class="pip"></span><span class="pip"></span>
+          <span class="pip"></span><span class="pip"></span><span class="pip"></span>
+        </span>
+        <span class="brand-text">
+          <h1>보드게임 랭킹 랩</h1>
+          <span class="stamp" id="stamp">불러오는 중…</span>
+        </span>
       </div>
       <div class="topbar-actions">
-        <input id="search" type="search" placeholder="게임명 검색 (한글/영문)" autocomplete="off" />
+        <label class="search-field">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="6"/><path d="M13.5 13.5 L18 18"/></svg>
+          <input id="search" type="search" placeholder="게임명 검색 (한글/영문)" autocomplete="off" />
+          <kbd>/</kbd>
+        </label>
         <button id="themeToggle" class="icon-btn" title="다크 모드 전환" aria-label="다크 모드 전환">◐</button>
       </div>
     </header>
@@ -23,7 +38,7 @@
       <!-- ── 나만의 랭킹 점수 ───────────────────────────────── -->
       <section class="panel" id="scorePanel">
         <div class="panel-head">
-          <h2>나만의 랭킹 점수</h2>
+          <h2><span class="eyebrow">01</span>나만의 랭킹 점수</h2>
           <div class="presets" id="presets"></div>
         </div>
         <div class="sliders" id="sliders"></div>
@@ -36,7 +51,7 @@
       <!-- ── 필터 ──────────────────────────────────────────── -->
       <section class="panel" id="filterPanel">
         <div class="panel-head">
-          <h2>필터</h2>
+          <h2><span class="eyebrow">02</span>필터</h2>
           <button id="resetFilters" class="ghost-btn">필터 초기화</button>
         </div>
 
@@ -116,7 +131,7 @@
       <!-- ── 결과 ──────────────────────────────────────────── -->
       <section class="panel results">
         <div class="panel-head">
-          <h2>결과 <span class="sub" id="resultCount">–</span></h2>
+          <h2><span class="eyebrow">03</span>결과 <span class="count-badge" id="resultCount">–</span></h2>
           <div class="result-actions">
             <label class="check inline">
               <input type="checkbox" id="compactMode" />

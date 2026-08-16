@@ -290,13 +290,39 @@ const fmt = (v, digits = 0) =>
   v == null ? '–' : v.toLocaleString('ko-KR', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 
 function deltaCell(value, suffix = '') {
-  if (value == null) return el('td', { textContent: '–' });
-  const cls = value > 0 ? 'up' : value < 0 ? 'down' : '';
-  const sign = value > 0 ? '▲' : value < 0 ? '▼' : '–';
-  return el('td', {
-    className: cls,
-    textContent: value === 0 ? '–' : `${sign} ${Math.abs(value).toLocaleString('ko-KR')}${suffix}`,
-  });
+  if (value == null || value === 0) {
+    return el('td', {}, el('span', { className: 'delta flat', textContent: '–' }));
+  }
+  const cls = value > 0 ? 'up' : 'down';
+  const sign = value > 0 ? '▲' : '▼';
+  return el(
+    'td',
+    {},
+    el('span', {
+      className: `delta ${cls}`,
+      textContent: `${sign} ${Math.abs(value).toLocaleString('ko-KR')}${suffix}`,
+    })
+  );
+}
+
+/** 점수를 5단계 순차 램프로 나눈다(색 하나를 밝기로만 구분). */
+function scorePill(score) {
+  const tier = score >= 92 ? 5 : score >= 78 ? 4 : score >= 58 ? 3 : score >= 34 ? 2 : 1;
+  return el('span', { className: `score-pill t${tier}`, textContent: score.toFixed(1) });
+}
+
+/** 난이도 1~5를 다섯 칸 미터로 보여준다. 숫자만으로는 눈에 안 들어온다. */
+function weightCell(weight) {
+  if (weight == null) return el('td', { textContent: '–' });
+  const meter = el('div', { className: 'weight-meter' });
+  for (let i = 1; i <= 5; i++) {
+    meter.append(el('i', { className: i <= Math.round(weight) ? 'f' : '' }));
+  }
+  return el(
+    'td',
+    {},
+    el('span', { className: 'weight-cell' }, meter, el('span', { textContent: weight.toFixed(2) }))
+  );
 }
 
 function playersText(g) {
@@ -492,7 +518,10 @@ function openCompare() {
     return;
   }
 
-  const colors = ['#2f6f4e', '#b3402f', '#2f5f9e', '#8a6d1f'];
+  // 계열색은 CSS 토큰에서 읽는다. 라이트/다크 각각 dataviz 검증을 통과한 값이라
+  // 테마가 바뀌면 그에 맞는 단계가 자동으로 적용된다.
+  const css = getComputedStyle(document.documentElement);
+  const colors = [1, 2, 3, 4].map((i) => css.getPropertyValue(`--series-${i}`).trim() || '#666');
 
   const close = el('button', { className: 'close', textContent: '×', title: '닫기' });
   close.onclick = () => (view.hidden = true);
@@ -605,8 +634,11 @@ function renderMore() {
     tr.dataset.id = g.id;
 
     tr.append(
-      el('td', {}, el('span', { className: 'score-pill', textContent: g._score100.toFixed(1) })),
-      el('td', { textContent: g.rank ?? '–' }),
+      el('td', {}, scorePill(g._score100)),
+      el('td', {
+        className: `rank-cell${g.rank <= 3 ? ` m${g.rank}` : ''}`,
+        textContent: g.rank ?? '–',
+      }),
       el(
         'td',
         { className: 'left' },
@@ -632,7 +664,7 @@ function renderMore() {
       ),
       el('td', { textContent: g.year ?? '–' }),
       el('td', { textContent: playersText(g) }),
-      el('td', { textContent: g.weight != null ? g.weight.toFixed(2) : '–' }),
+      weightCell(g.weight),
       el('td', { textContent: g.maxTime ? (g.minTime === g.maxTime ? `${g.maxTime}` : `${g.minTime}–${g.maxTime}`) : '–' }),
       el('td', { textContent: g.bayes != null ? g.bayes.toFixed(2) : '–' }),
       el('td', { textContent: g.average != null ? g.average.toFixed(2) : '–' }),
@@ -755,7 +787,11 @@ function openDrawer(g) {
     }),
     el('a', {
       className: 'ghost-btn',
-      href: `https://boardlife.co.kr/search?keyword=${encodeURIComponent(g.name ?? '')}`,
+      // 보드라이프 검색은 search.php?query=...&page=game 형태다.
+      // 국내 사이트이므로 한글명이 있으면 그쪽으로 찾는 편이 잘 걸린다.
+      href: `https://boardlife.co.kr/search.php?query=${encodeURIComponent(
+        g.kor ?? g.name ?? ''
+      )}&page=game`,
       target: '_blank',
       rel: 'noopener',
       textContent: '보드라이프 검색 ↗',
@@ -811,7 +847,13 @@ function buildSliders() {
   const box = $('#sliders');
   box.replaceChildren(
     ...AXES.map((axis) => {
-      const val = el('span', { className: 'val', textContent: state.weights[axis.key] });
+      const val = el('span', { className: 'val' });
+      const paintVal = (v) => {
+        val.textContent = v > 0 ? `+${v}` : String(v);
+        val.className = `val ${v > 0 ? 'pos' : v < 0 ? 'neg' : ''}`.trim();
+      };
+      paintVal(state.weights[axis.key]);
+
       const input = el('input', {
         type: 'range',
         min: -100,
@@ -822,7 +864,7 @@ function buildSliders() {
       input.dataset.axis = axis.key;
       input.oninput = () => {
         state.weights[axis.key] = Number(input.value);
-        val.textContent = input.value;
+        paintVal(Number(input.value));
         markPreset();
         recompute();
       };
@@ -841,8 +883,11 @@ function buildSliders() {
 function syncSliders() {
   for (const input of document.querySelectorAll('#sliders input[type=range]')) {
     const key = input.dataset.axis;
-    input.value = state.weights[key];
-    input.parentElement.querySelector('.val').textContent = state.weights[key];
+    const v = state.weights[key];
+    input.value = v;
+    const val = input.parentElement.querySelector('.val');
+    val.textContent = v > 0 ? `+${v}` : String(v);
+    val.className = `val ${v > 0 ? 'pos' : v < 0 ? 'neg' : ''}`.trim();
   }
 }
 
