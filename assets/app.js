@@ -480,16 +480,56 @@ function recompute() {
     return dir * (av - bv);
   });
 
+  /*
+   * 스크롤로 내려와 있던 만큼은 다시 그려 준다.
+   *
+   * 전에는 무조건 80개만 그려서, 500줄쯤 내려온 상태에서 표시 하나만 눌러도
+   * 목록이 80줄로 쪼그라들었다. 그러면 스크롤이 위로 튀고, 다시 내려가며
+   * 80개씩 채우는 동안 화면이 멈춘 것처럼 보인다.
+   * 보고 있던 위치도 함께 되돌린다.
+   */
+  const box = $('#tableWrap');
+  const keepScroll = box.scrollTop;
+  const keepRendered = Math.min(state.rendered, list.length);
+
   state.view = list;
   state.rendered = 0;
   $('#tbody').replaceChildren();
   $('#cards').replaceChildren();
   $('#resultCount').textContent = `${list.length.toLocaleString('ko-KR')}개`;
   $('#empty').hidden = list.length > 0;
+
   renderMore();
+  while (state.rendered < keepRendered) renderMore();
+  if (keepScroll) box.scrollTop = Math.min(keepScroll, box.scrollHeight);
+
   renderExcludedNote();
   renderPanelSummaries();
   syncUrl();
+}
+
+/**
+ * 표시(관심·보유·방출·제외)를 바꿨을 때 목록 전체를 다시 만들어야 하는가.
+ *
+ * 대부분은 아니다. 표시는 그 줄의 아이콘 색만 바뀔 뿐이라, 걸려 있는 필터가
+ * 표시를 보고 있을 때만 목록이 달라진다. 1만 개를 매번 거르고 정렬하고 다시
+ * 그리면 누를 때마다 화면이 끊긴다.
+ */
+function flagAffectsList(prev, next) {
+  const f = state.filters;
+  if (f.myListOnly || f.list) return true;
+  // 제외 숨기기는 "제외"가 붙거나 떨어질 때만 영향을 준다
+  if (f.hideExcluded && (prev === 'skip' || next === 'skip')) return true;
+  return false;
+}
+
+/** 그 게임이 그려져 있는 줄·카드의 표시 아이콘만 다시 칠한다 */
+function repaintFlags(id) {
+  for (const host of document.querySelectorAll(`#tableWrap [data-id="${id}"]`)) {
+    for (const btn of host.querySelectorAll('.flag')) {
+      btn.classList.toggle('on', state.flags[id] === btn.dataset.flag);
+    }
+  }
 }
 
 /** 표 / 카드 중 어느 쪽을 보여줄지 화면에 반영한다 */
@@ -606,10 +646,21 @@ function flagButton(g, type, glyph, title) {
       if (!ok) return;
     }
 
+    const prev = state.flags[g.id];
     if (already) delete state.flags[g.id];
     else state.flags[g.id] = type;
     saveFlags();
-    recompute();
+
+    /*
+     * 목록이 달라지지 않는 경우에는 그 줄의 아이콘만 다시 칠한다.
+     * 1만 개를 매번 거르고 정렬하고 다시 그리면 누를 때마다 화면이 끊긴다.
+     */
+    if (flagAffectsList(prev, state.flags[g.id])) recompute();
+    else {
+      repaintFlags(g.id);
+      renderExcludedNote();
+      renderPanelSummaries();
+    }
 
     if (!already && type === 'skip') {
       toast(`「${g.kor ?? g.name}」을(를) 제외했습니다`, {
@@ -617,7 +668,12 @@ function flagButton(g, type, glyph, title) {
         action: () => {
           delete state.flags[g.id];
           saveFlags();
-          recompute();
+          if (flagAffectsList('skip', undefined)) recompute();
+          else {
+            repaintFlags(g.id);
+            renderExcludedNote();
+            renderPanelSummaries();
+          }
         },
       });
     }
@@ -1942,11 +1998,18 @@ function drawerFlags(g) {
         btn.dataset.flag = type;
         btn.setAttribute('aria-pressed', String(on));
         btn.onclick = () => {
+          const prev = state.flags[g.id];
           if (state.flags[g.id] === type) delete state.flags[g.id];
           else state.flags[g.id] = type;
           saveFlags();
           paint();
-          recompute();
+          // 목록이 달라질 때만 전체를 다시 만든다(표의 표시 버튼과 같은 이유)
+          if (flagAffectsList(prev, state.flags[g.id])) recompute();
+          else {
+            repaintFlags(g.id);
+            renderExcludedNote();
+            renderPanelSummaries();
+          }
           refreshShelfIfOpen();
         };
         return btn;
