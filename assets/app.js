@@ -10,6 +10,23 @@
  */
 
 const CONFIG = window.LZ_CONFIG ?? {};
+const TERMS = window.LZ_TERMS ?? { categories: {}, mechanics: {} };
+
+/**
+ * BGG 원어 용어를 한글 이름과 설명으로 바꾼다.
+ * 사전에 없으면 원어를 그대로 쓴다(새 용어가 생겨도 화면이 비지 않는다).
+ */
+function term(kind, name) {
+  const hit = TERMS[kind]?.[name];
+  return { ko: hit?.[0] || name, desc: hit?.[1] || '', en: name };
+}
+
+/** 태그에 띄울 설명. "원어 · 설명" 형태 */
+function termTitle(kind, name) {
+  const t = term(kind, name);
+  if (t.ko === t.en) return t.desc || t.en;
+  return t.desc ? `${t.en} · ${t.desc}` : t.en;
+}
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, props = {}, ...kids) => {
   const node = Object.assign(document.createElement(tag), props);
@@ -740,7 +757,7 @@ function openCompare() {
       { className: 'compare-unique' },
       el('div', { className: 'sub' }, el('span', { className: 'dot', style: `background:${colors[i]}` }), ` ${g.kor ?? g.name} 에만 있는 메커니즘`),
       own.length
-        ? el('div', { className: 'taglist' }, ...own.map((m) => el('span', { textContent: m })))
+        ? el('div', { className: 'taglist' }, ...own.map((m) => el('span', { textContent: term('mechanics', m).ko, title: termTitle('mechanics', m) })))
         : el('div', { className: 'sub', textContent: '없음' })
     );
   });
@@ -755,7 +772,7 @@ function openCompare() {
       compareSpark(games, colors) ?? el('p', { className: 'sub', textContent: '비교할 순위 기록이 부족합니다.' }),
       el('h3', { textContent: '공통 메커니즘' }),
       shared.length
-        ? el('div', { className: 'taglist' }, ...shared.map((m) => el('span', { textContent: m })))
+        ? el('div', { className: 'taglist' }, ...shared.map((m) => el('span', { textContent: term('mechanics', m).ko, title: termTitle('mechanics', m) })))
         : el('p', { className: 'sub', textContent: '겹치는 메커니즘이 없습니다.' }),
       ...uniqueBlocks
     )
@@ -1304,13 +1321,23 @@ function openDrawer(g) {
     }
   }
 
-  const tags = (title, arr) =>
+  // kind 를 주면 한글 이름으로 바꾸고 설명을 툴팁에 단다(디자이너 같은 고유명사는 그대로).
+  const tags = (title, arr, kind = null) =>
     arr?.length
       ? el(
           'div',
           {},
           el('div', { className: 'sub', style: 'margin-top:10px' }, title),
-          el('div', { className: 'taglist' }, ...arr.map((t) => el('span', { textContent: t })))
+          el(
+            'div',
+            { className: 'taglist' },
+            ...arr.map((t) =>
+              el('span', {
+                textContent: kind ? term(kind, t).ko : t,
+                title: kind ? termTitle(kind, t) : '',
+              })
+            )
+          )
         )
       : null;
 
@@ -1378,8 +1405,8 @@ function openDrawer(g) {
     kv,
     el('div', { className: 'sub', style: 'margin-top:14px' }, '순위 추이 (최근 5년)'),
     rankChart(g) ?? el('p', { className: 'sub', textContent: '순위 기록이 부족합니다.' }),
-    tags('메커니즘', g.mechanics),
-    tags('카테고리', g.categories),
+    tags('메커니즘', g.mechanics, 'mechanics'),
+    tags('카테고리', g.categories, 'categories'),
     tags('디자이너', g.designers),
     g.subranks?.length
       ? el(
@@ -1518,9 +1545,14 @@ function quickChips(container, options, apply) {
 }
 
 function buildTagBox(box, facetList, bucket) {
+  const kind = bucket === 'mech' ? 'mechanics' : 'categories';
   box.replaceChildren(
     ...facetList.slice(0, 90).map(({ name, count }) => {
-      const tag = el('button', { className: 'tag', textContent: `${name} ${count}`, title: name });
+      const tag = el('button', {
+        className: 'tag',
+        textContent: `${term(kind, name).ko} ${count}`,
+        title: termTitle(kind, name),
+      });
       const paint = () => {
         tag.className = `tag ${state.filters[bucket][name] ?? ''}`.trim();
       };

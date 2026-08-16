@@ -69,6 +69,7 @@ jobs:
           sed -i \
             -e "s|assets/style\.css|assets/style.css?v=$STAMP|g" \
             -e "s|assets/config\.js|assets/config.js?v=$STAMP|g" \
+            -e "s|assets/terms\.js|assets/terms.js?v=$STAMP|g" \
             -e "s|assets/app\.js|assets/app.js?v=$STAMP|g" \
             _site/index.html
           grep -o 'assets/[a-z]*\.[a-z]*?v=[0-9]*' _site/index.html
