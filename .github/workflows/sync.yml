@@ -52,11 +52,22 @@ jobs:
 
       - name: 배포 아티팩트 준비
         # data/ranks.json 은 build 의 입력일 뿐이라 배포하지 않는다(수 MB).
+        #
+        # GitHub Pages 는 자산에 max-age=600 을 붙인다. 배포 직후 10분 동안
+        # 새 index.html 과 캐시된 옛 app.js 가 섞여 기능이 깨질 수 있으므로,
+        # 배포마다 자산 주소에 버전을 붙여 확실히 새로 받게 한다.
         run: |
           mkdir -p _site/data
           cp index.html _site/
           cp -r assets _site/
           cp data/games.json _site/data/
+          STAMP="${{ github.run_id }}"
+          sed -i \
+            -e "s|assets/style\.css|assets/style.css?v=$STAMP|g" \
+            -e "s|assets/config\.js|assets/config.js?v=$STAMP|g" \
+            -e "s|assets/app\.js|assets/app.js?v=$STAMP|g" \
+            _site/index.html
+          grep -o 'assets/[a-z]*\.[a-z]*?v=[0-9]*' _site/index.html
 
       - uses: actions/upload-pages-artifact@v3
         with:
