@@ -281,6 +281,7 @@ function recompute() {
   $('#resultCount').textContent = `${list.length.toLocaleString('ko-KR')}개`;
   $('#empty').hidden = list.length > 0;
   renderMore();
+  renderExcludedNote();
   syncUrl();
 }
 
@@ -342,20 +343,143 @@ function playersText(g) {
   return g.minPlayers ? `${g.minPlayers}–${g.maxPlayers}` : '–';
 }
 
+function saveFlags() {
+  localStorage.setItem('lz.flags', JSON.stringify(state.flags));
+}
+
 function flagButton(g, type, glyph, title) {
   const btn = el('button', {
     className: `flag${state.flags[g.id] === type ? ' on' : ''}`,
     textContent: glyph,
     title,
   });
-  btn.onclick = (e) => {
+  btn.onclick = async (e) => {
     e.stopPropagation();
-    if (state.flags[g.id] === type) delete state.flags[g.id];
+    const already = state.flags[g.id] === type;
+
+    // 제외는 목록에서 사라져 되돌리기 어려우므로 한 번 확인한다.
+    // 해제(이미 제외된 것을 다시 누르는 경우)는 물어보지 않는다.
+    if (!already && type === 'skip') {
+      const ok = await confirmDialog({
+        title: '이 게임을 제외할까요?',
+        body: `「${g.kor ?? g.name}」이(가) 목록에서 숨겨집니다. 데이터가 지워지는 것은 아니며, 언제든 다시 되돌릴 수 있습니다.`,
+        confirmText: '제외하기',
+        danger: true,
+      });
+      if (!ok) return;
+    }
+
+    if (already) delete state.flags[g.id];
     else state.flags[g.id] = type;
-    localStorage.setItem('lz.flags', JSON.stringify(state.flags));
+    saveFlags();
     recompute();
+
+    if (!already && type === 'skip') {
+      toast(`「${g.kor ?? g.name}」을(를) 제외했습니다`, {
+        label: '실행 취소',
+        action: () => {
+          delete state.flags[g.id];
+          saveFlags();
+          recompute();
+        },
+      });
+    }
   };
   return btn;
+}
+
+/* ── 확인 창 ──────────────────────────────────────────── */
+function confirmDialog({ title, body, confirmText = '확인', cancelText = '취소', danger = false }) {
+  return new Promise((resolve) => {
+    const modal = $('#modal');
+
+    const done = (value) => {
+      modal.hidden = true;
+      modal.replaceChildren();
+      document.removeEventListener('keydown', onKey);
+      resolve(value);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') done(false);
+      if (e.key === 'Enter') done(true);
+    };
+
+    const cancel = el('button', { className: 'ghost-btn', textContent: cancelText });
+    cancel.onclick = () => done(false);
+
+    const ok = el('button', {
+      className: `solid-btn${danger ? ' danger' : ''}`,
+      textContent: confirmText,
+    });
+    ok.onclick = () => done(true);
+
+    modal.replaceChildren(
+      el(
+        'div',
+        { className: 'modal-card', role: 'alertdialog', 'aria-modal': 'true' },
+        el('h3', { textContent: title }),
+        el('p', { textContent: body }),
+        el('div', { className: 'modal-actions' }, cancel, ok)
+      )
+    );
+    modal.hidden = false;
+    // 바깥을 눌러도 닫히게 한다
+    modal.onclick = (e) => {
+      if (e.target === modal) done(false);
+    };
+    document.addEventListener('keydown', onKey);
+    ok.focus();
+  });
+}
+
+/* ── 제외 목록 관리 ───────────────────────────────────── */
+function renderExcludedNote() {
+  const box = $('#excludedNote');
+  const ids = Object.entries(state.flags)
+    .filter(([, v]) => v === 'skip')
+    .map(([id]) => Number(id));
+
+  if (!ids.length) {
+    box.hidden = true;
+    box.replaceChildren();
+    return;
+  }
+
+  const show = el('button', { className: 'link-btn', textContent: '보기' });
+  show.onclick = () => {
+    $('#hideExcluded').checked = false;
+    state.filters.hideExcluded = false;
+    state.filters.q = '';
+    $('#search').value = '';
+    recompute();
+    toast('제외한 게임이 목록에 다시 표시됩니다. ✕를 눌러 해제하세요');
+  };
+
+  const clear = el('button', { className: 'link-btn', textContent: '모두 해제' });
+  clear.onclick = async () => {
+    const names = ids
+      .map((id) => state.data.games.find((g) => g.id === id))
+      .filter(Boolean)
+      .map((g) => g.kor ?? g.name);
+    const okay = await confirmDialog({
+      title: `제외 표시 ${ids.length}개를 모두 해제할까요?`,
+      body: names.slice(0, 8).join(', ') + (names.length > 8 ? ` 외 ${names.length - 8}개` : ''),
+      confirmText: '모두 해제',
+    });
+    if (!okay) return;
+    for (const id of ids) delete state.flags[id];
+    saveFlags();
+    recompute();
+    toast(`${ids.length}개를 되돌렸습니다`);
+  };
+
+  box.replaceChildren(
+    el('span', { textContent: `제외한 게임 ${ids.length}개` }),
+    show,
+    el('span', { className: 'dot-sep', textContent: '·' }),
+    clear
+  );
+  box.hidden = false;
 }
 
 /** 행에 붙는 "비교 담기" 토글 */
@@ -1154,12 +1278,24 @@ function loadUrl() {
 }
 
 /* ── 기타 액션 ────────────────────────────────────────── */
-function toast(msg) {
+function toast(msg, undo = null) {
   const t = $('#toast');
-  t.textContent = msg;
+  t.replaceChildren(el('span', { textContent: msg }));
+
+  if (undo) {
+    const btn = el('button', { className: 'toast-action', textContent: undo.label });
+    btn.onclick = () => {
+      clearTimeout(toast._timer);
+      t.hidden = true;
+      undo.action();
+    };
+    t.append(btn);
+  }
+
   t.hidden = false;
   clearTimeout(toast._timer);
-  toast._timer = setTimeout(() => (t.hidden = true), 1800);
+  // 실행 취소 버튼이 있으면 누를 시간을 넉넉히 준다
+  toast._timer = setTimeout(() => (t.hidden = true), undo ? 7000 : 2200);
 }
 
 function exportCsv() {

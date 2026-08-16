@@ -152,6 +152,15 @@
   box-sizing: border-box;
 }
 
+/*
+ * 요소에 display 를 지정하면 hidden 속성의 display:none(브라우저 기본 스타일)을
+ * 이겨버려서, 숨겼다고 생각한 오버레이가 계속 떠 있게 된다.
+ * .modal / .toast / .compare-bar / .excluded-note 가 모두 여기 해당하므로 한 번에 막는다.
+ */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   background: var(--bg);
@@ -1245,20 +1254,151 @@ tbody tr:hover .row-actions,
   margin-right: 3px;
 }
 
+/* ── 제외 목록 안내 ─────────────────────────────────────── */
+.excluded-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--down);
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.link-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link-btn:hover {
+  color: var(--accent-hover);
+}
+
+.dot-sep {
+  color: var(--text-dim);
+}
+
+/* ── 확인 창 ────────────────────────────────────────────── */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(18, 18, 20, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.modal-card {
+  width: min(400px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 20px 22px 18px;
+}
+
+.modal-card h3 {
+  font-size: 15.5px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.modal-card p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.solid-btn {
+  padding: 7px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.solid-btn:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.solid-btn.danger {
+  background: var(--down);
+  border-color: var(--down);
+}
+
+.solid-btn.danger:hover {
+  filter: brightness(1.08);
+}
+
+.solid-btn:focus-visible {
+  outline: 3px solid var(--accent-soft);
+  outline-offset: 1px;
+}
+
 /* ── 토스트 ─────────────────────────────────────────────── */
 .toast {
   position: fixed;
   left: 50%;
   bottom: 30px;
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
   background: var(--text);
   color: var(--bg);
-  padding: 10px 18px;
+  padding: 10px 14px 10px 18px;
   border-radius: 10px;
   font-size: 12.5px;
   font-weight: 600;
   z-index: 90;
   box-shadow: var(--shadow-lg);
+  max-width: calc(100vw - 32px);
+}
+
+.toast-action {
+  border: none;
+  background: none;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.toast-action:hover {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 /* ── 좁은 화면 ──────────────────────────────────────────── */
