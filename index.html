@@ -130,6 +130,11 @@
           </div>
 
           <div class="field">
+            <label>내 목록 <span class="sub" id="listLabel">전체</span></label>
+            <div class="chips" id="listChips"></div>
+          </div>
+
+          <div class="field">
             <label>기타</label>
             <label class="check">
               <input type="checkbox" id="risingOnly" />
@@ -145,15 +150,7 @@
             </label>
             <label class="check">
               <input type="checkbox" id="myListOnly" />
-              <span>내 목록(관심·보유)만</span>
-            </label>
-            <label class="check">
-              <input type="checkbox" id="notPlayedOnly" />
-              <span title="구입 기록이 있는데 플레이 기록이 없는 게임">사놓고 한 번도 안 한 것만</span>
-            </label>
-            <label class="check">
-              <input type="checkbox" id="ratedOnly" />
-              <span>내가 평점을 매긴 것만</span>
+              <span>관심·보유 전부</span>
             </label>
             <label class="check">
               <input type="checkbox" id="hideExcluded" checked />

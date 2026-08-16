@@ -54,6 +54,16 @@ const el = (tag, props = {}, ...kids) => {
   return node;
 };
 
+/**
+ * 자식을 통째로 갈아끼운다.
+ *
+ * el() 과 달리 DOM 의 replaceChildren 은 null 을 걸러주지 않고 "null" 이라는
+ * 글자로 바꿔 넣는다. `조건 ? el(...) : null` 을 그대로 넘기면 화면에 null 이
+ * 찍히므로(내 서재에서 빈 목록마다 실제로 그랬다) 여기서 걸러낸다.
+ */
+const setChildren = (node, ...kids) =>
+  node.replaceChildren(...kids.flat().filter((k) => k != null));
+
 /* ── 점수 축 정의 ─────────────────────────────────────────
  * value(game, m) 는 "클수록 좋다"는 방향으로 맞춘 원시값을 돌려준다.
  * 실제 점수 계산은 이 값들의 백분위에 가중치를 곱해 더한다. */
@@ -159,8 +169,8 @@ const DEFAULT_FILTERS = () => ({
   noTextOnly: false,
   krOnly: false,
   myListOnly: false,
-  notPlayedOnly: false,
-  ratedOnly: false,
+  // 내 목록 한 갈래만 보기: null | 'want' | 'own' | 'gone' | 'unplayed' | 'rated'
+  list: null,
   hideExcluded: true,
   q: '',
 });
@@ -326,13 +336,22 @@ function matches(g, f) {
   if (f.risingOnly && !(g.delta?.[30]?.rank > 0)) return false;
   if (f.noTextOnly && !/no necessary in-game text/i.test(g.langDep ?? '')) return false;
   if (f.krOnly && !g.kr) return false;
-  // 샀는데 아직 안 꺼내본 게임. 컬렉션을 정리할 때 제일 먼저 보게 된다.
-  if (f.notPlayedOnly && !(noteOf(g.id)?.buy && !playCount(g.id))) return false;
-  if (f.ratedOnly && noteOf(g.id)?.rating == null) return false;
 
   const flag = state.flags[g.id];
   if (f.myListOnly && flag !== 'want' && flag !== 'own') return false;
-  if (f.hideExcluded && flag === 'skip') return false;
+
+  // 내 목록 한 갈래만 보기. 서재의 목록을 그대로 카드/표로 훑기 위한 것이다.
+  if (f.list) {
+    if (f.list === 'unplayed') {
+      // 보유 중인데 아직 한 판도 안 한 것. 컬렉션 정리할 때 제일 먼저 본다.
+      if (!(flag === 'own' && !playCount(g.id))) return false;
+    } else if (f.list === 'rated') {
+      if (noteOf(g.id)?.rating == null) return false;
+    } else if (flag !== f.list) return false;
+  }
+
+  // 제외한 게임 숨기기. 단 "제외 목록"을 일부러 보는 중일 때는 숨기지 않는다.
+  if (f.hideExcluded && flag === 'skip' && f.list !== 'skip') return false;
 
   for (const [name, mode] of Object.entries(f.mech)) {
     const has = g.mechanics?.includes(name);
@@ -1669,13 +1688,15 @@ function openDrawer(g) {
       )
     : null;
 
-  d.replaceChildren(
+  setChildren(
+    d,
     drawerResizer(),
     close,
     el('h3', { textContent: g.kor ?? g.name ?? '' }),
     el('div', { className: 'sub', textContent: `${g.kor ? g.name + ' · ' : ''}${g.year ?? ''}` }),
     g.image ? el('img', { className: 'cover', src: g.image, alt: '', loading: 'lazy' }) : null,
     g.desc ? el('p', { className: 'sub', textContent: g.desc }) : null,
+    drawerFlags(g),
     actions,
     liveBox,
     kv,
@@ -1700,6 +1721,50 @@ function openDrawer(g) {
 }
 
 /* ── 내 기록 편집 ─────────────────────────────────────── */
+
+/** 표시 종류. 표의 작은 아이콘 버튼과 상세 패널의 큰 버튼이 같은 목록을 쓴다. */
+const FLAG_KINDS = [
+  { type: 'want', glyph: '★', label: '관심' },
+  { type: 'own', glyph: '●', label: '보유' },
+  { type: 'gone', glyph: '○', label: '방출' },
+  { type: 'skip', glyph: '✕', label: '제외' },
+];
+
+/**
+ * 상세 패널 위쪽의 표시 버튼 줄.
+ *
+ * 표의 행에도 같은 버튼이 있지만 아이콘만 있어 뜻이 바로 읽히지 않고, 상세를
+ * 열어 기록을 적다가 표시까지 바꾸려면 패널을 닫아야 했다. 여기서 바로 누른다.
+ */
+function drawerFlags(g) {
+  const box = el('div', { className: 'drawer-flags' });
+
+  const paint = () => {
+    setChildren(
+      box,
+      ...FLAG_KINDS.map(({ type, glyph, label }) => {
+        const on = state.flags[g.id] === type;
+        const btn = el('button', {
+          className: `drawer-flag${on ? ' on' : ''}`,
+          textContent: `${glyph} ${label}`,
+        });
+        btn.dataset.flag = type;
+        btn.setAttribute('aria-pressed', String(on));
+        btn.onclick = () => {
+          if (state.flags[g.id] === type) delete state.flags[g.id];
+          else state.flags[g.id] = type;
+          saveFlags();
+          paint();
+          recompute();
+        };
+        return btn;
+      })
+    );
+  };
+
+  paint();
+  return box;
+}
 
 const won = (v) => (v == null ? '–' : `${v.toLocaleString('ko-KR')}원`);
 const today = () => new Date().toISOString().slice(0, 10);
@@ -1790,7 +1855,8 @@ function noteSection(g) {
     if (cpp != null) chips.push(`1판당 ${won(cpp)}`);
     if (pf != null) chips.push(`${pf >= 0 ? '이익' : '손해'} ${won(Math.abs(pf))}`);
 
-    box.replaceChildren(
+    setChildren(
+      box,
       el(
         'div',
         { className: 'note-head' },
@@ -2136,13 +2202,30 @@ function openShelf() {
       ids.length > 24 ? el('span', { className: 'sub', textContent: `외 ${ids.length - 24}개` }) : null
     );
 
-  /** 목록 하나를 접이식 구역으로 */
-  const listSection = (title, ids, note, suffix) =>
+  /**
+   * 목록 하나를 구역으로.
+   *
+   * listKey 를 주면 "카드로 보기" 버튼이 붙는다. 서재의 칩 목록은 한눈에
+   * 세기에는 좋지만 표지가 없어 훑어보기에는 불편하다. 그 버튼을 누르면
+   * 결과 화면이 그 목록만 담은 상태가 되어, 평소처럼 카드/표로 볼 수 있다.
+   */
+  const listSection = (title, ids, note, suffix, listKey) =>
     ids.length
       ? el(
           'section',
           {},
-          el('h3', { textContent: `${title} (${ids.length})` }),
+          el(
+            'div',
+            { className: 'shelf-section-head' },
+            el('h3', { textContent: `${title} (${ids.length})` }),
+            listKey
+              ? (() => {
+                  const b = el('button', { className: 'ghost-btn', textContent: '카드로 보기 →' });
+                  b.onclick = () => showListInResults(listKey);
+                  return b;
+                })()
+              : null
+          ),
           note ? el('p', { className: 'sub', textContent: note }) : null,
           gameLinks(ids, suffix)
         )
@@ -2161,7 +2244,8 @@ function openShelf() {
     return pf == null ? '' : ` · ${pf >= 0 ? '+' : '−'}${Math.abs(pf).toLocaleString('ko-KR')}원`;
   };
 
-  view.replaceChildren(
+  setChildren(
+    view,
     close,
     el('h2', { textContent: '내 서재' }),
     s.tracked
@@ -2192,22 +2276,17 @@ function openShelf() {
       )
     ),
 
-    listSection('보유 중', s.own, '표에서 ● 를 누른 게임입니다.', priceTag),
-    listSection('방출함', s.gone, '가지고 있었지만 이제 없는 게임입니다.', soldTag),
-    listSection('관심', s.want, '★ 로 담아둔 게임입니다.', targetTag),
+    listSection('보유 중', s.own, '표에서 ● 를 누른 게임입니다.', priceTag, 'own'),
+    listSection('방출함', s.gone, '가지고 있었지만 이제 없는 게임입니다.', soldTag, 'gone'),
+    listSection('관심', s.want, '★ 로 담아둔 게임입니다.', targetTag, 'want'),
 
-    s.dusty.length
-      ? el(
-          'section',
-          {},
-          el('h3', { textContent: `사놓고 아직 안 한 게임 (${s.dusty.length})` }),
-          el('p', {
-            className: 'sub',
-            textContent: '보유 중인데 플레이 기록이 없습니다.',
-          }),
-          gameLinks(s.dusty, priceTag)
-        )
-      : null,
+    listSection(
+      '사놓고 아직 안 한 게임',
+      s.dusty,
+      '보유 중인데 플레이 기록이 없습니다.',
+      priceTag,
+      'unplayed'
+    ),
 
     s.stale.length
       ? el(
@@ -2517,6 +2596,56 @@ function buildTagBox(box, facetList, bucket) {
   );
 }
 
+/** 내 목록 갈래를 고르는 칩. 서재의 목록을 표/카드로 그대로 훑기 위한 통로다. */
+const LIST_CHIPS = [
+  { key: 'want', label: '★ 관심' },
+  { key: 'own', label: '● 보유' },
+  { key: 'gone', label: '○ 방출' },
+  { key: 'unplayed', label: '아직 안 한 것' },
+  { key: 'rated', label: '평점 매김' },
+];
+
+function buildListChips() {
+  const box = $('#listChips');
+  if (!box) return;
+  setChildren(
+    box,
+    ...LIST_CHIPS.map(({ key, label }) => {
+      const btn = el('button', {
+        className: `chip${state.filters.list === key ? ' on' : ''}`,
+        textContent: label,
+      });
+      btn.onclick = () => {
+        // 같은 칩을 다시 누르면 해제
+        state.filters.list = state.filters.list === key ? null : key;
+        buildListChips();
+        syncListLabel();
+        recompute();
+      };
+      return btn;
+    })
+  );
+  syncListLabel();
+}
+
+function syncListLabel() {
+  const label = $('#listLabel');
+  if (!label) return;
+  const hit = LIST_CHIPS.find((c) => c.key === state.filters.list);
+  label.textContent = hit ? hit.label.replace(/^[★●○]\s*/, '') : '전체';
+}
+
+/** 서재에서 목록 하나를 눌렀을 때, 그 목록만 담긴 결과 화면으로 넘어간다 */
+function showListInResults(key) {
+  state.filters.list = key;
+  buildListChips();
+  $('#shelfView').hidden = true;
+  $('#drawer').hidden = true;
+  recompute();
+  $('#tableWrap').scrollTop = 0;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 function buildFilters() {
   const f = state.filters;
 
@@ -2631,13 +2760,13 @@ function buildFilters() {
   buildTagBox($('#mechBox'), state.data.facets.mechanics, 'mech');
   buildTagBox($('#catBox'), state.data.facets.categories, 'cat');
 
+  buildListChips();
+
   for (const [id, key] of [
     ['risingOnly', 'risingOnly'],
     ['noTextOnly', 'noTextOnly'],
     ['krOnly', 'krOnly'],
     ['myListOnly', 'myListOnly'],
-    ['notPlayedOnly', 'notPlayedOnly'],
-    ['ratedOnly', 'ratedOnly'],
     ['hideExcluded', 'hideExcluded'],
   ]) {
     const box = document.getElementById(id);

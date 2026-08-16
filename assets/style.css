@@ -2017,6 +2017,51 @@ body.resizing {
   color: var(--text-dim);
 }
 
+/* ── 상세 패널의 표시 버튼 ──────────────────────────────── */
+.drawer-flags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 12px 0 10px;
+}
+
+.drawer-flag {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.14s;
+}
+
+.drawer-flag:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* 표의 아이콘 버튼과 같은 색 규칙을 따른다 */
+.drawer-flag.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.drawer-flag[data-flag='gone'].on {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+  color: var(--text-2);
+}
+
+.drawer-flag[data-flag='skip'].on {
+  background: var(--down);
+  border-color: var(--down);
+  color: #fff;
+}
+
 /* ── 내 기록 ────────────────────────────────────────────── */
 .my-rating {
   display: inline-block;
@@ -2214,6 +2259,14 @@ body.resizing {
 .shelf-stat-note {
   font-size: 10.5px;
   color: var(--text-dim);
+}
+
+.shelf-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .shelf-links {
