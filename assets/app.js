@@ -866,6 +866,37 @@ function sparkline(g) {
 const REVIEW_COUNT = 10;
 const REVIEW_MIN_LEN = 80;
 const reviewCache = new Map();
+/** 번역 결과는 원문을 키로 기억해 둔다. 같은 리뷰를 다시 열어도 재요청하지 않는다. */
+const translationCache = new Map();
+
+const wantsKorean = () => localStorage.getItem('lz.translate') !== 'off';
+
+/** 리뷰 본문을 번역문/원문 사이로 바꾼다 */
+function paintReviewBodies(box, translated) {
+  for (const article of box.querySelectorAll('.review')) {
+    const body = article.querySelector('.review-body');
+    const ko = article.dataset.ko;
+    const en = article.dataset.en;
+    const useKo = translated && ko;
+    body.textContent = useKo ? ko : en;
+    article.classList.toggle('is-translated', Boolean(useKo));
+  }
+}
+
+async function translateReviews(box, texts) {
+  const need = texts.filter((t) => !translationCache.has(t));
+  if (need.length) {
+    const res = await fetch(`${CONFIG.LIVE_PROXY}/translate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ texts: need }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const { translated } = await res.json();
+    need.forEach((t, i) => translationCache.set(t, translated?.[i] ?? ''));
+  }
+  return texts.map((t) => translationCache.get(t) ?? '');
+}
 
 async function loadReviews(g, box) {
   if (!CONFIG.LIVE_PROXY) return;
@@ -902,28 +933,35 @@ async function loadReviews(g, box) {
       return;
     }
 
-    box.replaceChildren(
-      el('p', {
-        className: 'sub',
-        textContent: `평가 ${items.length}개 중 내용이 있는 ${list.length}개 · BGG 이용자가 쓴 글입니다`,
-      }),
-      ...list.map((r) =>
+    const status = el('p', {
+      className: 'sub',
+      textContent: `평가 ${items.length}개 중 내용이 있는 ${list.length}개 · BGG 이용자가 쓴 글입니다`,
+    });
+
+    const toggle = el('button', { className: 'link-btn', type: 'button' });
+    const articles = list.map((r) => {
+      const a = el(
+        'article',
+        { className: 'review' },
         el(
-          'article',
-          { className: 'review' },
-          el(
-            'div',
-            { className: 'review-head' },
-            el('span', {
-              className: `review-score ${r.rating >= 8 ? 'high' : r.rating >= 6 ? 'mid' : 'low'}`,
-              textContent: Number.isFinite(r.rating) ? r.rating.toFixed(1) : '–',
-            }),
-            el('span', { className: 'review-user', textContent: r.user }),
-            r.country ? el('span', { className: 'review-country', textContent: r.country }) : null
-          ),
-          el('p', { className: 'review-body', textContent: r.text })
-        )
-      ),
+          'div',
+          { className: 'review-head' },
+          el('span', {
+            className: `review-score ${r.rating >= 8 ? 'high' : r.rating >= 6 ? 'mid' : 'low'}`,
+            textContent: Number.isFinite(r.rating) ? r.rating.toFixed(1) : '–',
+          }),
+          el('span', { className: 'review-user', textContent: r.user }),
+          r.country ? el('span', { className: 'review-country', textContent: r.country }) : null
+        ),
+        el('p', { className: 'review-body', textContent: r.text })
+      );
+      a.dataset.en = r.text;
+      return a;
+    });
+
+    box.replaceChildren(
+      el('div', { className: 'review-bar' }, status, toggle),
+      ...articles,
       el('a', {
         className: 'ghost-btn',
         href: `https://boardgamegeek.com/boardgame/${g.id}/ratings?rated=1&comment=1`,
@@ -932,6 +970,58 @@ async function loadReviews(g, box) {
         textContent: 'BGG에서 전체 리뷰 보기 ↗',
       })
     );
+
+    let showKo = wantsKorean();
+    let busy = false;
+
+    const paintToggle = () => {
+      toggle.textContent = showKo ? '원문 보기' : '한국어로 보기';
+      toggle.disabled = busy;
+    };
+
+    const ensureTranslation = async () => {
+      if (articles.every((a) => a.dataset.ko)) return true;
+      busy = true;
+      status.textContent = '한국어로 옮기는 중…';
+      paintToggle();
+      try {
+        const ko = await translateReviews(box, articles.map((a) => a.dataset.en));
+        articles.forEach((a, i) => {
+          if (ko[i]) a.dataset.ko = ko[i];
+        });
+        return true;
+      } catch {
+        status.textContent = '번역에 실패했습니다. 원문을 표시합니다.';
+        return false;
+      } finally {
+        busy = false;
+      }
+    };
+
+    const render = async () => {
+      if (showKo) {
+        const ok = await ensureTranslation();
+        if (!ok) showKo = false;
+        else {
+          status.textContent =
+            `평가 ${items.length}개 중 내용이 있는 ${list.length}개 · 기계 번역이라 어색할 수 있습니다`;
+        }
+      } else {
+        status.textContent = `평가 ${items.length}개 중 내용이 있는 ${list.length}개 · BGG 이용자가 쓴 글입니다`;
+      }
+      paintReviewBodies(box, showKo);
+      paintToggle();
+    };
+
+    toggle.onclick = () => {
+      if (busy) return;
+      showKo = !showKo;
+      localStorage.setItem('lz.translate', showKo ? 'on' : 'off');
+      render();
+    };
+
+    paintToggle();
+    render();
   } catch {
     box.replaceChildren(
       el('p', { className: 'sub', textContent: '리뷰를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.' })

@@ -1085,6 +1085,27 @@ tbody tr:hover .row-actions,
   font-weight: 700;
 }
 
+.review-bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.review-bar .sub {
+  flex: 1;
+  min-width: 0;
+}
+
+.review-bar .link-btn {
+  flex: none;
+}
+
+.review-bar .link-btn:disabled {
+  color: var(--text-dim);
+  cursor: progress;
+}
+
 .review {
   padding: 11px 12px;
   margin-top: 8px;
@@ -1138,6 +1159,19 @@ tbody tr:hover .row-actions,
 .review-country {
   font-size: 11px;
   color: var(--text-dim);
+}
+
+/* 번역문임을 표시해 원문과 헷갈리지 않게 한다 */
+.review.is-translated .review-head::after {
+  content: '번역';
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  flex: none;
 }
 
 .review-body {
