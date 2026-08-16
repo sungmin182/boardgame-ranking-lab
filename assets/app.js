@@ -865,13 +865,15 @@ function sparkline(g) {
  * 보여주고, 전체는 원문 링크로 넘긴다. */
 const REVIEW_COUNT = 10;
 const REVIEW_MIN_LEN = 80;
+/** 워커의 TRANSLATE_MAX 와 같은 값. 번역이 잘렸는지 화면에서 알려주는 데 쓴다. */
+const TRANSLATE_LIMIT = 2000;
 const reviewCache = new Map();
 /** 번역 결과는 원문을 키로 기억해 둔다. 같은 리뷰를 다시 열어도 재요청하지 않는다. */
 const translationCache = new Map();
 
 const wantsKorean = () => localStorage.getItem('lz.translate') !== 'off';
 
-/** 리뷰 본문을 번역문/원문 사이로 바꾼다 */
+/** 리뷰 본문을 번역문/원문 사이로 바꾸고, 접힘 여부를 다시 판정한다 */
 function paintReviewBodies(box, translated) {
   for (const article of box.querySelectorAll('.review')) {
     const body = article.querySelector('.review-body');
@@ -880,6 +882,36 @@ function paintReviewBodies(box, translated) {
     const useKo = translated && ko;
     body.textContent = useKo ? ko : en;
     article.classList.toggle('is-translated', Boolean(useKo));
+    updateReviewClamp(article);
+  }
+}
+
+/**
+ * 접힌 상태에서 넘치는 글에만 '더 보기'를 보여준다.
+ * 번역문과 원문은 길이가 달라서, 전환할 때마다 다시 재어야 한다.
+ */
+function updateReviewClamp(article) {
+  const body = article.querySelector('.review-body');
+  const more = article.querySelector('.review-more');
+  if (!more) return;
+
+  const expanded = article.classList.contains('expanded');
+  if (expanded) {
+    more.hidden = false;
+    more.textContent = '접기';
+  } else {
+    // 접힌 높이보다 실제 내용이 길면 넘친다
+    const overflows = body.scrollHeight - body.clientHeight > 4;
+    more.hidden = !overflows;
+    more.textContent = '더 보기';
+  }
+
+  // 번역은 앞부분까지만 한다. 펼쳤는데도 원문보다 짧으면 그 사실을 알려준다.
+  const note = article.querySelector('.review-note');
+  if (note) {
+    const cut =
+      article.classList.contains('is-translated') && article.dataset.en.length > TRANSLATE_LIMIT;
+    note.hidden = !(expanded && cut);
   }
 }
 
@@ -919,11 +951,16 @@ async function loadReviews(g, box) {
       reviewCache.set(g.id, items);
     }
 
-    // "충실한 것"의 기준: 한 줄 감상은 빼고 긴 글부터. 길이가 완벽한 잣대는
-    // 아니지만, 별점만 남긴 코멘트를 걸러내는 데는 충분하다.
+    // "충실한 것"의 기준. 길이순으로만 뽑으면 초장문만 올라와 전부 잘린 채로 보인다.
+    // 200~1200자 구간을 가장 높게 치고, 그보다 긴 글은 점수를 조금씩 깎는다.
+    const score = (r) => {
+      const n = r.text.length;
+      if (n < REVIEW_MIN_LEN) return -1;
+      return n <= 1200 ? n : 1200 - (n - 1200) * 0.15;
+    };
     const picked = items
       .filter((r) => r.text.length >= REVIEW_MIN_LEN)
-      .sort((a, b) => b.text.length - a.text.length)
+      .sort((a, b) => score(b) - score(a))
       .slice(0, REVIEW_COUNT);
 
     const list = picked.length ? picked : items.slice(0, REVIEW_COUNT);
@@ -956,6 +993,18 @@ async function loadReviews(g, box) {
         el('p', { className: 'review-body', textContent: r.text })
       );
       a.dataset.en = r.text;
+
+      const more = el('button', { className: 'review-more', type: 'button', hidden: true });
+      more.onclick = () => {
+        a.classList.toggle('expanded');
+        updateReviewClamp(a);
+      };
+      const note = el('p', {
+        className: 'review-note',
+        hidden: true,
+        textContent: `번역은 앞 ${TRANSLATE_LIMIT.toLocaleString('ko-KR')}자까지입니다. 나머지는 '원문 보기'나 BGG에서 확인하세요.`,
+      });
+      a.append(more, note);
       return a;
     });
 
@@ -1027,6 +1076,63 @@ async function loadReviews(g, box) {
       el('p', { className: 'sub', textContent: '리뷰를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.' })
     );
   }
+}
+
+/* ── 서랍 폭 조절 ─────────────────────────────────────────
+ * 왼쪽 모서리를 잡아끌어 넓힐 수 있다. 리뷰처럼 긴 글은 좁은 패널에서
+ * 읽기 나쁘기 때문이다. 정한 폭은 기억하고, 더블클릭하면 기본으로 돌아간다. */
+const DRAWER_MIN = 340;
+const DRAWER_DEFAULT = 450;
+const drawerMax = () => Math.min(window.innerWidth - 80, 1100);
+
+function setDrawerWidth(px, save = true) {
+  const w = Math.round(Math.max(DRAWER_MIN, Math.min(px, drawerMax())));
+  document.documentElement.style.setProperty('--drawer-w', `${w}px`);
+  if (save) localStorage.setItem('lz.drawerWidth', String(w));
+}
+
+function initDrawerResize() {
+  const saved = Number(localStorage.getItem('lz.drawerWidth'));
+  setDrawerWidth(Number.isFinite(saved) && saved > 0 ? saved : DRAWER_DEFAULT, false);
+
+  // 창을 줄였을 때 서랍이 화면 밖으로 나가지 않게 한다
+  addEventListener('resize', () => {
+    const cur = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--drawer-w'), 10);
+    if (Number.isFinite(cur)) setDrawerWidth(cur, false);
+  });
+}
+
+function drawerResizer() {
+  const handle = el('div', {
+    className: 'drawer-resizer',
+    title: '좌우로 끌어 폭 조절 (더블클릭하면 기본값)',
+  });
+
+  handle.onpointerdown = (e) => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    document.body.classList.add('resizing');
+
+    const move = (ev) => setDrawerWidth(window.innerWidth - ev.clientX, false);
+    const up = (ev) => {
+      handle.releasePointerCapture(ev.pointerId);
+      document.body.classList.remove('resizing');
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      setDrawerWidth(window.innerWidth - ev.clientX); // 여기서만 저장한다
+      // 폭이 바뀌면 줄 수가 달라지므로 '더 보기' 표시를 다시 판정한다
+      document.querySelectorAll('#drawer .review').forEach(updateReviewClamp);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+  };
+
+  handle.ondblclick = () => {
+    setDrawerWidth(DRAWER_DEFAULT);
+    document.querySelectorAll('#drawer .review').forEach(updateReviewClamp);
+  };
+
+  return handle;
 }
 
 function openDrawer(g) {
@@ -1123,6 +1229,7 @@ function openDrawer(g) {
     : null;
 
   d.replaceChildren(
+    drawerResizer(),
     close,
     el('h3', { textContent: g.kor ?? g.name ?? '' }),
     el('div', { className: 'sub', textContent: `${g.kor ? g.name + ' · ' : ''}${g.year ?? ''}` }),
@@ -1577,6 +1684,7 @@ function initTheme() {
 /* ── 시작 ─────────────────────────────────────────────── */
 async function main() {
   initTheme();
+  initDrawerResize();
 
   const res = await fetch(CONFIG.DATA_URL ?? 'data/games.json');
   if (!res.ok) {

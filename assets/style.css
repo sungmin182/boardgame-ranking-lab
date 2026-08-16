@@ -972,7 +972,7 @@ tbody tr:hover .row-actions,
   right: 0;
   top: 0;
   bottom: 0;
-  width: min(450px, 100vw);
+  width: min(var(--drawer-w, 450px), 100vw);
   background: var(--surface);
   border-left: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
@@ -980,6 +980,44 @@ tbody tr:hover .row-actions,
   overflow-y: auto;
   z-index: 50;
   scrollbar-width: thin;
+}
+
+/* 왼쪽 모서리의 폭 조절 손잡이 */
+.drawer-resizer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 5;
+}
+
+.drawer-resizer::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 44px;
+  border-radius: 3px;
+  background: var(--border-strong);
+  opacity: 0.55;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.drawer-resizer:hover::before,
+body.resizing .drawer-resizer::before {
+  opacity: 1;
+  background: var(--accent);
+}
+
+/* 끄는 동안 글자가 잡히거나 커서가 바뀌지 않도록 */
+body.resizing {
+  user-select: none;
+  cursor: col-resize;
 }
 
 .drawer h3 {
@@ -1181,11 +1219,41 @@ tbody tr:hover .row-actions,
   color: var(--text-2);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  /* 원문 전체를 옮겨 싣지 않는다. 넘치면 접고 링크로 보낸다. */
-  max-height: 9.5em;
+  /* 기본은 접어두고, '더 보기'로 펼친다 */
+  max-height: 11.5em;
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(180deg, #000 72%, transparent);
-  mask-image: linear-gradient(180deg, #000 72%, transparent);
+  -webkit-mask-image: linear-gradient(180deg, #000 76%, transparent);
+  mask-image: linear-gradient(180deg, #000 76%, transparent);
+}
+
+.review.expanded .review-body {
+  max-height: none;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.review-more {
+  margin-top: 6px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.review-more:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.review-note {
+  margin: 7px 0 0;
+  font-size: 11px;
+  color: var(--text-dim);
 }
 
 .reviews > .ghost-btn {
