@@ -2611,9 +2611,61 @@ body.resizing {
 
 .sync-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 8px;
-  margin-top: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+/* 두 칸이 무엇을 넣는 곳인지 제목으로 분명히 밝힌다 */
+.sync-field {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.sync-field label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.sync-field .sub {
+  font-size: 11px;
+}
+
+.sync-field-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.sync-eye {
+  flex: none;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.sync-eye:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.sync-warn {
+  margin-top: 8px;
+  padding: 8px 11px;
+  border: 1px solid var(--down);
+  border-radius: var(--radius-sm);
+  background: var(--down-soft);
+  color: var(--down);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .sync-input {

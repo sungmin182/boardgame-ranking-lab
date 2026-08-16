@@ -2631,20 +2631,52 @@ function syncSection() {
       rows.push(diag, el('div', { className: 'shelf-actions' }, checkBtn));
     }
 
+    /*
+     * 두 칸을 나란히 두었더니 열쇠를 암호구절 칸에 넣는 일이 실제로 있었다.
+     * 이름을 흐린 안내문이 아니라 제목으로 달고, 가린 글자를 볼 수 있게 하고,
+     * 열쇠처럼 생긴 값이 들어오면 바로 알려 준다.
+     */
     const passInput = el('input', {
       type: 'password',
       className: 'sync-input',
-      placeholder: '암호구절',
+      placeholder: '예: 내가 기억할 문장',
       value: passphrase(),
       autocomplete: 'off',
     });
+    const warn = el('p', { className: 'sync-warn', hidden: true });
+    const checkPass = () => {
+      const looksLikeKey = /^[a-f0-9]{32}$/i.test(passInput.value.trim());
+      warn.hidden = !looksLikeKey;
+      warn.textContent = looksLikeKey
+        ? '이 값은 동기화 열쇠처럼 보입니다. 암호구절 칸에는 열쇠가 아니라 처음 정한 문구를 넣으세요.'
+        : '';
+    };
+    passInput.oninput = checkPass;
+    checkPass();
+
+    const reveal = el('button', { className: 'sync-eye', textContent: '보기', type: 'button' });
+    reveal.onclick = () => {
+      const hidden = passInput.type === 'password';
+      passInput.type = hidden ? 'text' : 'password';
+      reveal.textContent = hidden ? '가리기' : '보기';
+    };
+
     const idInput = el('input', {
       type: 'text',
       className: 'sync-input',
-      placeholder: '다른 기기의 동기화 열쇠 (32자리)',
+      placeholder: '예: d2aa5a8a1cf8248c…',
       value: '',
       autocomplete: 'off',
     });
+
+    const field = (title, note, ...kids) =>
+      el(
+        'div',
+        { className: 'sync-field' },
+        el('label', { textContent: title }),
+        el('span', { className: 'sub', textContent: note }),
+        el('div', { className: 'sync-field-row' }, ...kids)
+      );
 
     const busy = (btn, fn) => async () => {
       const old = btn.textContent;
@@ -2694,6 +2726,34 @@ function syncSection() {
       toast('연결하고 받아왔습니다');
     });
 
+    /*
+     * 암호구절을 잊었거나 잘못 바꿔 넣어 서버 자료를 못 여는 상태에서 빠져나오는 길.
+     *
+     * 이 기기의 기록은 멀쩡하므로, 서버에 올려둔 것을 지금 암호구절로 다시 덮어쓰면
+     * 된다. 서버가 rev 를 확인해 거절하므로 현재 rev 를 먼저 받아 그대로 실어 보낸다.
+     */
+    const resetBtn = el('button', { className: 'ghost-btn', textContent: '서버 자료 새로 덮어쓰기' });
+    resetBtn.onclick = busy(resetBtn, async () => {
+      if (!passInput.value.trim()) throw new Error('암호구절을 입력하세요');
+      const ok = await confirmDialog({
+        title: '서버에 올려둔 자료를 지우고 다시 올릴까요?',
+        body:
+          `이 기기의 기록(${Object.keys(notes).length}개, 표시 ${Object.keys(state.flags).length}개)으로 서버를 덮어씁니다. ` +
+          '암호구절을 잊어 서버 자료를 못 여는 경우에 씁니다. ' +
+          '다른 기기에만 있는 기록이 있다면 그 기기에서 먼저 받아두세요. 이 기기의 기록은 지워지지 않습니다.',
+        confirmText: '덮어쓰기',
+        danger: true,
+      });
+      if (!ok) return;
+      localStorage.setItem('lz.pass', passInput.value.trim());
+      // 서버의 현재 버전을 그대로 받아 충돌 검사를 통과시킨다
+      const cur = await (await fetch(syncEndpoint())).json();
+      sync.rev = cur.rev ?? 0;
+      saveSyncMeta();
+      await syncPush();
+      toast('서버 자료를 이 기기 기록으로 다시 올렸습니다');
+    });
+
     const offBtn = el('button', { className: 'ghost-btn', textContent: '이 기기에서 끄기' });
     offBtn.onclick = async () => {
       const ok = await confirmDialog({
@@ -2720,13 +2780,20 @@ function syncSection() {
           '기록은 이 브라우저에서 암호구절로 잠근 뒤 올라갑니다. 서버에는 알아볼 수 없는 덩어리만 남아, 서버 운영자도 내용을 볼 수 없습니다. 암호구절은 기기 밖으로 나가지 않으며, 잃어버리면 되살릴 방법이 없습니다.',
       }),
       ...rows,
-      el('div', { className: 'sync-fields' }, passInput, idInput),
+      el(
+        'div',
+        { className: 'sync-fields' },
+        field('암호구절', '자료를 잠그는 문구입니다. 모든 기기에서 똑같아야 합니다.', passInput, reveal),
+        field('다른 기기의 동기화 열쇠', '이 기기를 기존 것에 연결할 때만 넣습니다.', idInput)
+      ),
+      warn,
       el(
         'div',
         { className: 'shelf-actions' },
         startBtn,
         on ? pullBtn : null,
         joinBtn,
+        on ? resetBtn : null,
         on ? offBtn : null
       )
     );
