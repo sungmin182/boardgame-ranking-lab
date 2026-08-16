@@ -1686,6 +1686,27 @@ function openDrawer(g) {
       target: '_blank',
       rel: 'noopener',
       textContent: '부마갤 검색 ↗',
+    }),
+    el('a', {
+      className: 'ghost-btn',
+      /*
+       * 당근 중고거래 검색.
+       *
+       * 앱이 깔린 휴대폰에서는 이 https 주소가 앱으로 바로 열린다(앱링크/유니버설
+       * 링크). 그래서 daangn:// 같은 커스텀 스킴을 쓰지 않는다 — 스킴은 앱이
+       * 없으면 아무 일도 일어나지 않고 오류 화면만 남는데, https 는 앱이 없으면
+       * 웹으로 열려서 어느 쪽이든 동작한다.
+       *
+       * 주소 형식은 assets/config.js 에서 바꿀 수 있게 빼 두었다. 당근이 경로를
+       * 바꾸면 앱 코드를 건드리지 않고 그 한 줄만 고치면 된다.
+       */
+      href: (CONFIG.DAANGN_SEARCH ?? 'https://www.daangn.com/kr/buy-sell/?search={q}').replace(
+        '{q}',
+        encodeURIComponent(g.kor ?? g.name ?? '')
+      ),
+      target: '_blank',
+      rel: 'noopener',
+      textContent: '당근 검색 ↗',
     })
   );
 

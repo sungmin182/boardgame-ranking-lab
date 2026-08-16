@@ -16,4 +16,17 @@
 window.LZ_CONFIG = {
   LIVE_PROXY: 'https://bgg-live-proxy.boardgame-ranking-lab.workers.dev',
   DATA_URL: 'data/games.json',
+
+  /**
+   * 상세 패널의 "당근 검색" 버튼이 여는 주소. {q} 자리에 게임 이름이 들어갑니다.
+   *
+   * 휴대폰에 당근 앱이 깔려 있으면 이 https 주소가 앱으로 바로 열립니다
+   * (앱링크/유니버설 링크). daangn:// 같은 커스텀 스킴을 쓰지 않는 이유는,
+   * 앱이 없을 때 아무 일도 일어나지 않고 오류 화면만 남기 때문입니다.
+   *
+   * 당근이 검색 경로를 바꾸면 여기 한 줄만 고치면 됩니다.
+   * 확인 방법: 휴대폰이나 PC에서 당근 중고거래 검색을 한 번 하고,
+   * 주소창의 주소에서 검색어 자리를 {q} 로 바꿔 넣으세요.
+   */
+  DAANGN_SEARCH: 'https://www.daangn.com/kr/buy-sell/?search={q}',
 };
