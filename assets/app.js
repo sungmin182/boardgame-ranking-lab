@@ -1200,6 +1200,32 @@ function renderHead() {
  * 확인하지 못했다. config.js 의 DAANGN_IOS_SCHEME 에 넣으면 그때부터 쓰인다.
  * 비어 있으면 지금처럼 웹으로 연다.
  */
+/**
+ * 글자를 클립보드에 넣는다.
+ *
+ * navigator.clipboard 는 https 가 아니거나 권한이 없으면 거부한다.
+ * 그때를 위해 화면 밖에 임시 입력칸을 만들어 옛 방식으로 한 번 더 시도한다.
+ */
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    /* 아래 예비 수단으로 넘어간다 */
+  }
+  try {
+    const ta = el('textarea', { value: text, readOnly: true });
+    ta.style.cssText = 'position:fixed;top:-1000px;opacity:0';
+    document.body.append(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 const isAndroid = () => /Android/i.test(navigator.userAgent);
 const isIOS = () =>
   /iPad|iPhone|iPod/.test(navigator.userAgent) ||
@@ -1248,20 +1274,23 @@ function externalLink(key, name) {
    * 안 받아 웹으로 떨어질 링크라면 복사라도 해 주는 편이 낫다.
    */
   if (isMobile() && conf.copyName) {
-    a.textContent = `${conf.label} (이름 복사) ↗`;
-    a.href = web;
+    /*
+     * 앱으로 갈 수 없는 곳(당근)에서는 이름만 복사하고 아무 데도 가지 않는다.
+     *
+     * 웹을 띄워봐야 앱보다 기능이 적어 결국 앱으로 다시 넘어가야 한다.
+     * 화면을 옮기지 않으면 보던 목록이 그대로 남아, 최근 앱으로 당근에
+     * 넘어가 붙여넣고 돌아오는 흐름이 끊기지 않는다.
+     * 웹으로 보고 싶을 때를 위해 알림에 버튼 하나를 남겨 둔다.
+     */
+    a.textContent = `${conf.label}용 이름 복사`;
+    a.href = web; // 길게 눌러 "새 탭으로 열기" 같은 기본 동작은 살려 둔다
     a.onclick = async (e) => {
-      /*
-       * 복사가 끝나기 전에 페이지가 넘어가면 클립보드에 아무것도 안 남는다.
-       * 기본 이동을 막고, 복사가 끝난 뒤에 직접 넘긴다.
-       */
       e.preventDefault();
-      try {
-        await navigator.clipboard.writeText(q);
-      } catch {
-        /* 권한이 없거나 지원하지 않으면 복사 없이 넘어간다 */
-      }
-      location.href = web;
+      const copied = await copyText(q);
+      toast(
+        copied ? `「${q}」 복사됨 · 당근 앱에서 붙여넣으세요` : `복사하지 못했습니다 · ${q}`,
+        { label: '웹으로 열기', action: () => (location.href = web) }
+      );
     };
     return a;
   }
