@@ -2414,13 +2414,23 @@ async function encryptPayload(obj, pass, id) {
 
 async function decryptPayload(payload, pass, id) {
   const [ivB64, dataB64] = String(payload).split('.');
-  if (!ivB64 || !dataB64) throw new Error('형식이 올바르지 않습니다');
+  if (!ivB64 || !dataB64) throw new Error('올려둔 자료의 형식이 올바르지 않습니다');
   const key = await deriveKey(pass, id);
-  const plain = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: fromB64(ivB64) },
-    key,
-    fromB64(dataB64)
-  );
+  let plain;
+  try {
+    plain = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: fromB64(ivB64) },
+      key,
+      fromB64(dataB64)
+    );
+  } catch {
+    /*
+     * AES-GCM 은 열쇠가 틀리면 인증에 실패해 거부한다. 그런데 브라우저가 던지는
+     * 오류에는 설명이 거의 없어(message 가 빈 문자열인 경우가 많다) 화면에
+     * "실패:" 만 뜬다. 원인이 사실상 하나뿐이므로 여기서 말로 바꿔 준다.
+     */
+    throw new Error('암호구절이 다릅니다. 다른 기기에서 쓴 것과 똑같이 입력했는지 확인하세요');
+  }
   return JSON.parse(dec.decode(plain));
 }
 
@@ -2469,23 +2479,30 @@ async function syncPull({ quiet = false } = {}) {
   const remote = await decryptPayload(data.payload, passphrase(), sync.id);
   const before = JSON.stringify({ n: notes, f: state.flags });
 
-  const merged = mergeNotes(notes, remote.notes);
-  for (const k of Object.keys(notes)) delete notes[k];
-  Object.assign(notes, merged);
-  Object.assign(state.flags, mergeFlags(state.flags, remote.flags));
-  if (remote.places) {
-    for (const kind of ['buy', 'sell']) {
-      const set = new Set([...(places[kind] ?? []), ...(remote.places[kind] ?? [])]);
-      places[kind] = [...set];
+  // 받아서 적용하는 동안에는 저장이 "올리기"를 다시 예약하지 않게 막는다.
+  // 안 그러면 받자마자 올리고, 그게 또 받기를 부르는 식으로 계속 돈다.
+  applyingRemote = true;
+  try {
+    const merged = mergeNotes(notes, remote.notes);
+    for (const k of Object.keys(notes)) delete notes[k];
+    Object.assign(notes, merged);
+    Object.assign(state.flags, mergeFlags(state.flags, remote.flags));
+    if (remote.places) {
+      for (const kind of ['buy', 'sell']) {
+        const set = new Set([...(places[kind] ?? []), ...(remote.places[kind] ?? [])]);
+        places[kind] = [...set];
+      }
+      savePlaces();
     }
-    savePlaces();
-  }
 
-  sync.rev = data.rev;
-  sync.lastAt = data.updatedAt;
-  saveSyncMeta();
-  saveNotes();
-  saveFlags();
+    sync.rev = data.rev;
+    sync.lastAt = data.updatedAt;
+    saveSyncMeta();
+    saveNotes();
+    saveFlags();
+  } finally {
+    applyingRemote = false;
+  }
 
   const changed = before !== JSON.stringify({ n: notes, f: state.flags });
   if (changed && !quiet) {
@@ -2569,6 +2586,49 @@ function syncSection() {
           el('code', { textContent: sync.id })
         )
       );
+
+      /*
+       * 진단 줄.
+       *
+       * 잘 안 될 때 "왜 안 되는지"를 알 방법이 없으면 손을 못 댄다.
+       * 두 기기에서 이 줄을 나란히 보면 원인이 대개 바로 드러난다
+       * (열쇠가 다른가 / 암호구절이 없는가 / 서버에 아직 아무것도 없는가).
+       */
+      const diag = el('div', { className: 'sync-diag' });
+      const line = (k, v) => el('div', {}, el('b', { textContent: k }), el('span', { textContent: v }));
+      const paintDiag = (extra = '확인 전') =>
+        setChildren(
+          diag,
+          line('이 기기 열쇠', `${sync.id.slice(0, 8)}… (${sync.id.length}자리)`),
+          line('암호구절', hasPass ? '입력됨' : '없음'),
+          line('내 기록', `${Object.keys(notes).length}개 · 표시 ${Object.keys(state.flags).length}개`),
+          line('서버', extra)
+        );
+      paintDiag();
+
+      const checkBtn = el('button', { className: 'ghost-btn', textContent: '서버 상태 확인' });
+      checkBtn.onclick = async () => {
+        checkBtn.disabled = true;
+        try {
+          const res = await fetch(syncEndpoint());
+          const d = await res.json();
+          paintDiag(
+            res.status === 501
+              ? '저장소(KV) 미연결'
+              : !res.ok
+                ? `오류 ${res.status}`
+                : d.empty
+                  ? '아직 아무것도 올라와 있지 않음'
+                  : `자료 있음 · 버전 ${d.rev} · ${new Date(d.updatedAt).toLocaleString('ko-KR')}`
+          );
+        } catch (e) {
+          paintDiag(`연결 실패 (${e.message})`);
+        } finally {
+          checkBtn.disabled = false;
+        }
+      };
+
+      rows.push(diag, el('div', { className: 'shelf-actions' }, checkBtn));
     }
 
     const passInput = el('input', {
