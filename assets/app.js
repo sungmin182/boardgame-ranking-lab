@@ -899,11 +899,14 @@ function updateReviewClamp(article) {
   if (expanded) {
     more.hidden = false;
     more.textContent = '접기';
+    article.classList.remove('is-clamped');
   } else {
     // 접힌 높이보다 실제 내용이 길면 넘친다
     const overflows = body.scrollHeight - body.clientHeight > 4;
     more.hidden = !overflows;
     more.textContent = '더 보기';
+    // 흐림 처리와 버튼은 항상 같이 간다. 흐린데 버튼이 없으면 막힌 것처럼 보인다.
+    article.classList.toggle('is-clamped', overflows);
   }
 
   // 번역은 앞부분까지만 한다. 펼쳤는데도 원문보다 짧으면 그 사실을 알려준다.
@@ -1060,6 +1063,10 @@ async function loadReviews(g, box) {
       }
       paintReviewBodies(box, showKo);
       paintToggle();
+      // 웹폰트가 늦게 실리면 줄 높이가 달라진다. 폰트가 준비된 뒤 한 번 더 잰다.
+      document.fonts?.ready.then(() => {
+        box.querySelectorAll('.review').forEach(updateReviewClamp);
+      });
     };
 
     toggle.onclick = () => {
