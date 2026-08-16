@@ -54,7 +54,18 @@ window.LZ_CONFIG = {
 
     daangn: {
       label: '당근 검색',
-      url: 'https://www.daangn.com/kr/buy-sell/?search={q}',
+      /*
+       * 실제 검색 주소는 이런 모양입니다:
+       *   /kr/buy-sell/s/?in=<동네>-<번호>&search=<검색어>
+       *
+       * in(동네)은 일부러 넣지 않습니다. 이 파일은 공개 저장소에 올라가므로
+       * 사는 동네가 그대로 드러나기 때문입니다. 빼도 당근이 로그인된 계정의
+       * 기본 동네로 알아서 잡아 줍니다.
+       *
+       * 특정 동네로 고정하고 싶다면 아래에 &in=... 을 덧붙이면 되지만,
+       * 그 상태로 커밋하면 동네가 공개된다는 점을 기억하세요.
+       */
+      url: 'https://www.daangn.com/kr/buy-sell/s/?search={q}',
       mobile: '',
       // 안드로이드에서 앱을 확실히 여는 데 쓰는 패키지명.
       // 당근이 공개한 assetlinks.json 에서 확인한 값이다.
