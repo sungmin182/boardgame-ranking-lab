@@ -18,15 +18,49 @@ window.LZ_CONFIG = {
   DATA_URL: 'data/games.json',
 
   /**
-   * 상세 패널의 "당근 검색" 버튼이 여는 주소. {q} 자리에 게임 이름이 들어갑니다.
+   * 상세 패널의 바깥 사이트 검색 버튼 주소.
    *
-   * 휴대폰에 당근 앱이 깔려 있으면 이 https 주소가 앱으로 바로 열립니다
-   * (앱링크/유니버설 링크). daangn:// 같은 커스텀 스킴을 쓰지 않는 이유는,
-   * 앱이 없을 때 아무 일도 일어나지 않고 오류 화면만 남기 때문입니다.
+   * {q} 자리에 게임 이름(한글명이 있으면 한글명)이 들어갑니다.
    *
-   * 당근이 검색 경로를 바꾸면 여기 한 줄만 고치면 됩니다.
-   * 확인 방법: 휴대폰이나 PC에서 당근 중고거래 검색을 한 번 하고,
-   * 주소창의 주소에서 검색어 자리를 {q} 로 바꿔 넣으세요.
+   * ── 왜 여기 모아 두었나 ─────────────────────────────
+   * 이 사이트들은 robots.txt 로 자동 접근을 막고 있어서, 개발 중에 실제 주소를
+   * 열어 확인할 수가 없습니다. 그래서 형식이 바뀌거나 처음부터 틀렸을 때
+   * 코드를 고치지 않고 여기 한 줄만 고칠 수 있게 모았습니다.
+   *
+   * ── 고치는 방법 ────────────────────────────────────
+   * 그 사이트에서 검색을 한 번 하고, 주소창의 주소를 그대로 붙여넣은 뒤
+   * 검색어 부분만 {q} 로 바꾸면 됩니다.
+   *
+   * mobile 을 따로 둘 수 있습니다. PC 주소가 휴대폰에서 다른 주소로 넘어가면서
+   * 검색어가 떨어져 나가는 경우가 있기 때문입니다(디시인사이드가 그렇습니다).
+   * 비워두면 PC 주소를 그대로 씁니다.
    */
-  DAANGN_SEARCH: 'https://www.daangn.com/kr/buy-sell/?search={q}',
+  LINKS: {
+    boardlife: {
+      label: '보드라이프 검색',
+      url: 'https://boardlife.co.kr/search.php?query={q}&page=game',
+    },
+
+    bumagall: {
+      label: '부마갤 검색',
+      // 디시인사이드 부루마불 마이너 갤러리. 제목+본문 검색.
+      url: 'https://gall.dcinside.com/mgallery/board/lists?id=bulemarble&s_type=search_subject_memo&s_keyword={q}',
+      // PC 주소로 들어가면 휴대폰에서는 m.dcinside.com 으로 넘어가면서
+      // 검색어가 사라진다. 확인되면 여기에 모바일 주소를 넣을 것.
+      mobile: '',
+    },
+
+    daangn: {
+      label: '당근 검색',
+      url: 'https://www.daangn.com/kr/buy-sell/?search={q}',
+      mobile: '',
+      // 안드로이드에서 앱을 확실히 여는 데 쓰는 패키지명.
+      // 당근이 공개한 assetlinks.json 에서 확인한 값이다.
+      androidPackage: 'com.towneers.www',
+      // iOS 는 앱 고유 스킴이 있어야 앱이 열린다. 공개된 곳에서 확인하지 못했다.
+      // 당근 앱에서 "공유"로 나오는 주소를 보고 채우면 그때부터 쓰인다.
+      //   예) 'karrotmarket://search?query={q}'
+      iosScheme: '',
+    },
+  },
 };

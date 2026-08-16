@@ -200,6 +200,20 @@ const notes = JSON.parse(localStorage.getItem('lz.notes') ?? '{}');
 
 const noteOf = (id) => notes[id];
 
+/**
+ * 서버에서 받은 것을 적용하는 중인지.
+ *
+ * 켜져 있는 동안에는 저장이 다시 "올리기"를 부르지 않게 한다.
+ * 안 그러면 받자마자 올리고, 그게 또 받기를 부르는 식으로 계속 돈다.
+ */
+let applyingRemote = false;
+
+/** 이 게임의 기록을 방금 고쳤다고 표시한다. 기기 간 병합에서 최신 판정에 쓴다. */
+function touchNote(id) {
+  const n = notes[id];
+  if (n) n.u = Date.now();
+}
+
 function saveNotes() {
   // 값이 하나도 없는 기록은 버린다
   for (const [id, n] of Object.entries(notes)) {
@@ -215,6 +229,7 @@ function saveNotes() {
     if (empty) delete notes[id];
   }
   localStorage.setItem('lz.notes', JSON.stringify(notes));
+  if (!applyingRemote) syncSoon();
 }
 
 /** 해당 게임의 기록을 꺼내되, 없으면 만들어서 돌려준다 */
@@ -565,6 +580,7 @@ function playersText(g) {
 
 function saveFlags() {
   localStorage.setItem('lz.flags', JSON.stringify(state.flags));
+  if (!applyingRemote) syncSoon();
 }
 
 function flagButton(g, type, glyph, title) {
@@ -1170,6 +1186,65 @@ function renderHead() {
   );
 }
 
+/* ── 당근 열기 ────────────────────────────────────────────
+ *
+ * https 주소만 걸어두면 앱이 깔려 있어도 웹으로 열린다(실제로 그랬다).
+ * 앱 연결(App Links / Universal Links)은 조건이 까다롭다 — 특히
+ * target="_blank" 로 새 탭에 여는 경우 전환이 끊긴다.
+ *
+ * 안드로이드는 확실한 방법이 있다. intent:// 주소로 패키지를 직접 지정하면
+ * 앱이 열리고, 없으면 browser_fallback_url 로 웹이 열린다.
+ * 패키지명 com.towneers.www 는 당근이 공개한 assetlinks.json 에서 확인한 값이다.
+ *
+ * iOS 는 이런 표준 장치가 없어 앱 고유 스킴이 필요한데, 그 값은 공개된 곳에서
+ * 확인하지 못했다. config.js 의 DAANGN_IOS_SCHEME 에 넣으면 그때부터 쓰인다.
+ * 비어 있으면 지금처럼 웹으로 연다.
+ */
+const isAndroid = () => /Android/i.test(navigator.userAgent);
+const isIOS = () =>
+  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isMobile = () => isAndroid() || isIOS();
+
+/**
+ * 바깥 사이트 검색 버튼 하나를 만든다.
+ *
+ * 주소는 config.js 의 LINKS 에서 온다. 휴대폰용 주소가 따로 있으면 그것을 쓴다
+ * (PC 주소가 모바일에서 다른 주소로 넘어가며 검색어가 사라지는 경우가 있다).
+ * 안드로이드에서 앱을 열어야 하는 곳은 intent:// 로 패키지를 직접 지정한다.
+ */
+function externalLink(key, q) {
+  const conf = CONFIG.LINKS?.[key];
+  if (!conf?.url) return null;
+
+  const fill = (tpl) => tpl.replace('{q}', encodeURIComponent(q));
+  const web = fill(isMobile() && conf.mobile ? conf.mobile : conf.url);
+  const a = el('a', { className: 'ghost-btn', textContent: `${conf.label} ↗`, rel: 'noopener' });
+
+  // 안드로이드 + 앱이 있는 곳: intent:// 로 앱을 열고, 없으면 웹으로 떨어진다.
+  if (isAndroid() && conf.androidPackage) {
+    a.href =
+      `intent://${web.replace(/^https?:\/\//, '')}#Intent;scheme=https;` +
+      `package=${conf.androidPackage};S.browser_fallback_url=${encodeURIComponent(web)};end`;
+    return a; // 새 탭으로 열면 앱 전환이 끊기므로 target 을 두지 않는다
+  }
+
+  if (isIOS() && conf.iosScheme) {
+    a.href = fill(conf.iosScheme);
+    // 앱이 없으면 아무 일도 안 일어난다. 잠시 뒤 웹으로 넘겨준다.
+    a.onclick = () => {
+      const t = setTimeout(() => (location.href = web), 1200);
+      addEventListener('pagehide', () => clearTimeout(t), { once: true });
+    };
+    return a;
+  }
+
+  a.href = web;
+  // 휴대폰에서는 새 탭이 오히려 불편하다(뒤로가기로 못 돌아옴)
+  if (!isMobile()) a.target = '_blank';
+  return a;
+}
+
 /* ── 상세 서랍 ────────────────────────────────────────── */
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const svgEl = (tag, attrs = {}) => {
@@ -1665,49 +1740,11 @@ function openDrawer(g) {
       rel: 'noopener',
       textContent: 'BGG에서 보기 ↗',
     }),
-    el('a', {
-      className: 'ghost-btn',
-      // 보드라이프 검색은 search.php?query=...&page=game 형태다.
-      // 국내 사이트이므로 한글명이 있으면 그쪽으로 찾는 편이 잘 걸린다.
-      href: `https://boardlife.co.kr/search.php?query=${encodeURIComponent(
-        g.kor ?? g.name ?? ''
-      )}&page=game`,
-      target: '_blank',
-      rel: 'noopener',
-      textContent: '보드라이프 검색 ↗',
-    }),
-    el('a', {
-      className: 'ghost-btn',
-      // 디시인사이드 부루마불 마이너 갤러리(부마갤). 국내 보드게임 논의가 모이는 곳이다.
-      // 제목+본문 검색이 s_type=search_subject_memo 다.
-      href: `https://gall.dcinside.com/mgallery/board/lists?id=bulemarble&s_type=search_subject_memo&s_keyword=${encodeURIComponent(
-        g.kor ?? g.name ?? ''
-      )}`,
-      target: '_blank',
-      rel: 'noopener',
-      textContent: '부마갤 검색 ↗',
-    }),
-    el('a', {
-      className: 'ghost-btn',
-      /*
-       * 당근 중고거래 검색.
-       *
-       * 앱이 깔린 휴대폰에서는 이 https 주소가 앱으로 바로 열린다(앱링크/유니버설
-       * 링크). 그래서 daangn:// 같은 커스텀 스킴을 쓰지 않는다 — 스킴은 앱이
-       * 없으면 아무 일도 일어나지 않고 오류 화면만 남는데, https 는 앱이 없으면
-       * 웹으로 열려서 어느 쪽이든 동작한다.
-       *
-       * 주소 형식은 assets/config.js 에서 바꿀 수 있게 빼 두었다. 당근이 경로를
-       * 바꾸면 앱 코드를 건드리지 않고 그 한 줄만 고치면 된다.
-       */
-      href: (CONFIG.DAANGN_SEARCH ?? 'https://www.daangn.com/kr/buy-sell/?search={q}').replace(
-        '{q}',
-        encodeURIComponent(g.kor ?? g.name ?? '')
-      ),
-      target: '_blank',
-      rel: 'noopener',
-      textContent: '당근 검색 ↗',
-    })
+    // 국내 사이트이므로 한글명이 있으면 그쪽으로 찾는 편이 잘 걸린다.
+    // 주소는 전부 config.js 의 LINKS 에서 온다. 설정에 없으면 버튼을 만들지 않는다.
+    ...['boardlife', 'bumagall', 'daangn']
+      .map((k) => externalLink(k, g.kor ?? g.name ?? ''))
+      .filter(Boolean)
   );
 
   const liveBox = el('div', { className: 'sub', style: 'margin-top:8px' });
@@ -2067,6 +2104,7 @@ function noteSection(g) {
   const box = el('section', { className: 'note-section' });
 
   const rerender = () => {
+    touchNote(g.id); // 기기 간 병합에서 어느 쪽이 최신인지 가리는 기준
     saveNotes();
     autoShowNoteColumns();
     recompute();
@@ -2275,6 +2313,7 @@ function playRow(n, p, i, rerender) {
   const set = (key, type) => (e) => {
     const raw = e.target.value.trim();
     p[key] = raw === '' ? null : type === 'number' ? Number(raw) : raw;
+    n.u = Date.now();
     saveNotes();
     if (key === 'date') rerender(); // 날짜가 바뀌면 "마지막 플레이"가 달라진다
   };
@@ -2308,6 +2347,319 @@ function autoShowNoteColumns() {
   state.showNotes = true;
   $('#showNotes').checked = true;
   renderHead();
+}
+
+/* ── 기기 간 동기화 ───────────────────────────────────────
+ *
+ * PC 에서 적은 것을 폰에서 보려면 중간에 저장소가 하나 있어야 한다.
+ * 다만 서버가 내용을 볼 수 있으면 곤란하므로, **브라우저에서 잠근 뒤** 올린다.
+ *
+ *   암호구절 --PBKDF2--> 키 --AES-GCM--> 암호문  →  서버에는 이것만 간다
+ *
+ * 서버(Cloudflare)에 남는 것은 무작위 ID 와 암호문 덩어리뿐이다.
+ * 암호구절은 이 기기 밖으로 나가지 않는다. 잃어버리면 복구 방법이 없다.
+ */
+const sync = JSON.parse(localStorage.getItem('lz.sync') ?? '{}'); // { id, rev, lastAt }
+
+const saveSyncMeta = () => localStorage.setItem('lz.sync', JSON.stringify(sync));
+
+/** 암호구절은 저장하지 않는 것이 원칙이지만, 매번 묻는 것도 못 쓴다.
+ *  이 기기에만 남기고 서버로는 절대 보내지 않는다. */
+const passphrase = () => sessionStorage.getItem('lz.pass') ?? localStorage.getItem('lz.pass') ?? '';
+
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+
+const toHex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+const fromB64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+const toB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+
+const newSyncId = () => toHex(crypto.getRandomValues(new Uint8Array(16)));
+
+/** 암호구절 → 암호화 키. 소금은 동기화 ID 로 쓴다(기기마다 같은 키가 나와야 하므로). */
+async function deriveKey(pass, id) {
+  const base = await crypto.subtle.importKey('raw', enc.encode(pass), 'PBKDF2', false, [
+    'deriveKey',
+  ]);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: enc.encode('lz.sync.' + id), iterations: 210_000, hash: 'SHA-256' },
+    base,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+async function encryptPayload(obj, pass, id) {
+  const key = await deriveKey(pass, id);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const data = enc.encode(JSON.stringify(obj));
+  const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);
+  return `${toB64(iv)}.${toB64(cipher)}`;
+}
+
+async function decryptPayload(payload, pass, id) {
+  const [ivB64, dataB64] = String(payload).split('.');
+  if (!ivB64 || !dataB64) throw new Error('형식이 올바르지 않습니다');
+  const key = await deriveKey(pass, id);
+  const plain = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: fromB64(ivB64) },
+    key,
+    fromB64(dataB64)
+  );
+  return JSON.parse(dec.decode(plain));
+}
+
+/**
+ * 두 기기의 기록을 합친다.
+ *
+ * 게임 하나하나를 "마지막으로 고친 시각(u)"으로 비교해 최신 쪽을 남긴다.
+ * 통째로 덮어쓰면 한쪽에서 적은 것이 통째로 사라지기 때문이다.
+ * 시각이 없는 옛 기록은 상대가 시각을 갖고 있으면 그쪽에 양보한다.
+ */
+function mergeNotes(mine, theirs) {
+  const out = { ...mine };
+  for (const [id, t] of Object.entries(theirs ?? {})) {
+    const m = out[id];
+    if (!m) {
+      out[id] = t;
+      continue;
+    }
+    const mu = m.u ?? 0;
+    const tu = t.u ?? 0;
+    if (tu > mu) out[id] = t;
+  }
+  return out;
+}
+
+/** 표시(관심·보유…)도 같은 방식으로 합친다. 시각이 없으므로 상대 것을 채워 넣기만 한다. */
+function mergeFlags(mine, theirs) {
+  return { ...(theirs ?? {}), ...mine };
+}
+
+const syncEndpoint = () => `${CONFIG.LIVE_PROXY}/sync?id=${sync.id}`;
+
+/** 서버에서 받아 내 기록과 합친다. 돌려주는 값은 "바뀐 게 있었나". */
+async function syncPull({ quiet = false } = {}) {
+  if (!sync.id || !passphrase()) return false;
+  const res = await fetch(syncEndpoint());
+  if (res.status === 501) throw new Error('워커에 저장소(KV)가 아직 연결되지 않았습니다');
+  if (!res.ok) throw new Error(`서버 응답 ${res.status}`);
+  const data = await res.json();
+  if (data.empty) {
+    sync.rev = 0;
+    saveSyncMeta();
+    return false;
+  }
+
+  const remote = await decryptPayload(data.payload, passphrase(), sync.id);
+  const before = JSON.stringify({ n: notes, f: state.flags });
+
+  const merged = mergeNotes(notes, remote.notes);
+  for (const k of Object.keys(notes)) delete notes[k];
+  Object.assign(notes, merged);
+  Object.assign(state.flags, mergeFlags(state.flags, remote.flags));
+  if (remote.places) {
+    for (const kind of ['buy', 'sell']) {
+      const set = new Set([...(places[kind] ?? []), ...(remote.places[kind] ?? [])]);
+      places[kind] = [...set];
+    }
+    savePlaces();
+  }
+
+  sync.rev = data.rev;
+  sync.lastAt = data.updatedAt;
+  saveSyncMeta();
+  saveNotes();
+  saveFlags();
+
+  const changed = before !== JSON.stringify({ n: notes, f: state.flags });
+  if (changed && !quiet) {
+    autoShowNoteColumns();
+    renderHead();
+    recompute();
+    refreshShelfIfOpen();
+  }
+  return changed;
+}
+
+/** 내 기록을 잠가서 올린다. 다른 기기가 먼저 올렸으면 합친 뒤 다시 시도한다. */
+async function syncPush({ retry = true } = {}) {
+  if (!sync.id || !passphrase()) return false;
+  const payload = await encryptPayload(
+    { notes, flags: state.flags, places, at: new Date().toISOString() },
+    passphrase(),
+    sync.id
+  );
+  const res = await fetch(syncEndpoint(), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ payload, baseRev: sync.rev ?? 0 }),
+  });
+
+  if (res.status === 409) {
+    // 그 사이 다른 기기가 올렸다. 받아서 합친 뒤 한 번만 다시 올린다.
+    if (!retry) throw new Error('동기화가 계속 어긋납니다. 잠시 뒤 다시 시도하세요.');
+    await syncPull({ quiet: true });
+    return syncPush({ retry: false });
+  }
+  if (res.status === 501) throw new Error('워커에 저장소(KV)가 아직 연결되지 않았습니다');
+  if (!res.ok) throw new Error(`서버 응답 ${res.status}`);
+
+  const data = await res.json();
+  sync.rev = data.rev;
+  sync.lastAt = data.updatedAt;
+  saveSyncMeta();
+  return true;
+}
+
+/**
+ * 고친 뒤 잠깐 기다렸다가 올린다.
+ *
+ * 글자를 칠 때마다 올리면 무료 한도(하루 쓰기 1,000회)를 금방 쓴다.
+ * 손을 멈추고 3초 뒤 한 번만 올린다.
+ */
+let pushTimer = null;
+function syncSoon() {
+  if (!sync.id || !passphrase()) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => {
+    syncPush().catch((e) => toast(`동기화 실패: ${e.message}`));
+  }, 3000);
+}
+
+/** 내 서재 안의 동기화 설정 구역 */
+function syncSection() {
+  const box = el('section', { className: 'shelf-backup' });
+
+  const paint = () => {
+    const on = Boolean(sync.id);
+    const hasPass = Boolean(passphrase());
+
+    const status = !CONFIG.LIVE_PROXY
+      ? '중계 서버(LIVE_PROXY)가 설정돼 있지 않아 쓸 수 없습니다.'
+      : !on
+        ? '아직 꺼져 있습니다. 켜면 이 기기의 기록을 잠가서 올리고, 다른 기기에서 같은 열쇠로 받아볼 수 있습니다.'
+        : !hasPass
+          ? '암호구절이 이 기기에 없습니다. 아래에 입력하면 다시 연결됩니다.'
+          : `켜짐 · 마지막 동기화 ${sync.lastAt ? new Date(sync.lastAt).toLocaleString('ko-KR') : '없음'}`;
+
+    const rows = [];
+
+    if (on) {
+      rows.push(
+        el(
+          'div',
+          { className: 'sync-key' },
+          el('span', { className: 'sub', textContent: '동기화 열쇠 (다른 기기에 그대로 입력)' }),
+          el('code', { textContent: sync.id })
+        )
+      );
+    }
+
+    const passInput = el('input', {
+      type: 'password',
+      className: 'sync-input',
+      placeholder: '암호구절',
+      value: passphrase(),
+      autocomplete: 'off',
+    });
+    const idInput = el('input', {
+      type: 'text',
+      className: 'sync-input',
+      placeholder: '다른 기기의 동기화 열쇠 (32자리)',
+      value: '',
+      autocomplete: 'off',
+    });
+
+    const busy = (btn, fn) => async () => {
+      const old = btn.textContent;
+      btn.textContent = '…';
+      btn.disabled = true;
+      try {
+        await fn();
+      } catch (e) {
+        toast(`실패: ${e.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = old;
+        paint();
+      }
+    };
+
+    const startBtn = el('button', { className: 'ghost-btn', textContent: on ? '지금 올리기' : '동기화 켜기' });
+    startBtn.onclick = busy(startBtn, async () => {
+      if (!passInput.value.trim()) throw new Error('암호구절을 입력하세요');
+      localStorage.setItem('lz.pass', passInput.value.trim());
+      if (!sync.id) {
+        sync.id = newSyncId();
+        sync.rev = 0;
+        saveSyncMeta();
+      }
+      await syncPush();
+      toast('올렸습니다');
+    });
+
+    const pullBtn = el('button', { className: 'ghost-btn', textContent: '지금 받기' });
+    pullBtn.onclick = busy(pullBtn, async () => {
+      if (!sync.id) throw new Error('먼저 동기화를 켜거나 열쇠를 연결하세요');
+      const changed = await syncPull();
+      toast(changed ? '다른 기기의 기록을 합쳤습니다' : '바뀐 내용이 없습니다');
+    });
+
+    const joinBtn = el('button', { className: 'ghost-btn', textContent: '이 열쇠로 연결' });
+    joinBtn.onclick = busy(joinBtn, async () => {
+      const id = idInput.value.trim().toLowerCase();
+      if (!/^[a-f0-9]{32}$/.test(id)) throw new Error('열쇠는 32자리 16진수입니다');
+      if (!passInput.value.trim()) throw new Error('암호구절을 입력하세요');
+      localStorage.setItem('lz.pass', passInput.value.trim());
+      sync.id = id;
+      sync.rev = 0;
+      saveSyncMeta();
+      await syncPull();
+      toast('연결하고 받아왔습니다');
+    });
+
+    const offBtn = el('button', { className: 'ghost-btn', textContent: '이 기기에서 끄기' });
+    offBtn.onclick = async () => {
+      const ok = await confirmDialog({
+        title: '이 기기에서 동기화를 끌까요?',
+        body: '서버에 올려둔 기록은 지워지지 않고, 이 기기의 기록도 그대로 남습니다. 연결만 끊습니다.',
+        confirmText: '끄기',
+      });
+      if (!ok) return;
+      delete sync.id;
+      delete sync.rev;
+      delete sync.lastAt;
+      saveSyncMeta();
+      localStorage.removeItem('lz.pass');
+      paint();
+    };
+
+    setChildren(
+      box,
+      el('h3', { textContent: '기기 간 동기화' }),
+      el('p', { className: 'sub', textContent: status }),
+      el('p', {
+        className: 'sub',
+        textContent:
+          '기록은 이 브라우저에서 암호구절로 잠근 뒤 올라갑니다. 서버에는 알아볼 수 없는 덩어리만 남아, 서버 운영자도 내용을 볼 수 없습니다. 암호구절은 기기 밖으로 나가지 않으며, 잃어버리면 되살릴 방법이 없습니다.',
+      }),
+      ...rows,
+      el('div', { className: 'sync-fields' }, passInput, idInput),
+      el(
+        'div',
+        { className: 'shelf-actions' },
+        startBtn,
+        on ? pullBtn : null,
+        joinBtn,
+        on ? offBtn : null
+      )
+    );
+  };
+
+  paint();
+  return box;
 }
 
 /* ── 내 서재 (기록 요약) ──────────────────────────────── */
@@ -2603,6 +2955,8 @@ function openShelf() {
           gameLinks(s.stale, (x) => ` · ${x.since}일`)
         )
       : null,
+
+    syncSection(),
 
     // ── 백업
     el(
@@ -3314,6 +3668,15 @@ async function main() {
     recompute();
   };
   $('#myShelf').onclick = openShelf;
+
+  // 다른 기기에서 적은 것을 열자마자 받아온다. 실패해도 사이트는 그대로 쓴다.
+  if (sync.id && passphrase() && CONFIG.LIVE_PROXY) {
+    syncPull().catch(() => toast('동기화 서버에 연결하지 못했습니다'));
+    // 폰을 주머니에서 꺼내 다시 볼 때도 최신이 되게 한다
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') syncPull().catch(() => {});
+    });
+  }
 
   applyViewMode();
 

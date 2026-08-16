@@ -17,3 +17,16 @@ enabled = true
 # 리뷰 한국어 번역에 사용. 별도 API 키 없이 이 계정에서 바로 돈다.
 [ai]
 binding = "AI"
+
+# 기기 간 기록 동기화 저장소.
+#
+# 저장되는 것은 브라우저에서 암호로 잠근 덩어리뿐이다. 워커도, Cloudflare도
+# 내용을 볼 수 없다(자세한 설명은 worker.js 의 /sync 부분).
+#
+# 처음 한 번만 네임스페이스를 만들고 아래 id 를 채운다:
+#   npx wrangler kv namespace create SYNC --config proxy/wrangler.toml
+#
+# 무료 한도: 하루 쓰기 1,000회 / 읽기 10만회. 개인용으로는 충분하다.
+[[kv_namespaces]]
+binding = "SYNC"
+id = "PUT_YOUR_KV_NAMESPACE_ID_HERE"

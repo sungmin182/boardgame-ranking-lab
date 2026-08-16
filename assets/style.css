@@ -2565,6 +2565,49 @@ body.resizing {
   margin-top: 10px;
 }
 
+/* ── 기기 간 동기화 ─────────────────────────────────────── */
+.sync-key {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 10px 0;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.sync-key code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  color: var(--accent);
+  word-break: break-all;
+  user-select: all; /* 눌러서 통째로 집을 수 있게 */
+}
+
+.sync-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.sync-input {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.sync-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 /* ── 결과 하단 줄 ──────────────────────────────────────── */
 .result-foot {
   display: flex;
