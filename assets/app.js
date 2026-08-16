@@ -527,6 +527,7 @@ function flagButton(g, type, glyph, title) {
     textContent: glyph,
     title,
   });
+  btn.dataset.flag = type; // 표시 종류마다 색을 달리하기 위해
   btn.onclick = async (e) => {
     e.stopPropagation();
     const already = state.flags[g.id] === type;
@@ -1062,6 +1063,8 @@ const CELL = {
           { className: 'row-actions' },
           flagButton(g, 'want', '★', '관심'),
           flagButton(g, 'own', '●', '보유'),
+          // 보유 ● 와 짝이 되는 빈 원. 가지고 있었지만 이제 없는 게임이다.
+          flagButton(g, 'gone', '○', '방출'),
           flagButton(g, 'skip', '✕', '제외'),
           compareButton(g)
         )
@@ -1701,12 +1704,56 @@ function openDrawer(g) {
 const won = (v) => (v == null ? '–' : `${v.toLocaleString('ko-KR')}원`);
 const today = () => new Date().toISOString().slice(0, 10);
 
+/*
+ * 구입처·판매처 후보.
+ *
+ * datalist 로 붙이므로 목록에서 고를 수도 있고 직접 적을 수도 있다.
+ * select 로 만들면 여기 없는 곳을 적을 방법이 없어진다.
+ */
+const BUY_PLACES = [
+  '보드게임 전문몰',
+  '온라인 종합몰',
+  '오프라인 매장',
+  '중고 · 보드라이프',
+  '중고 · 당근',
+  '중고 · 번개장터',
+  '중고 · 지인',
+  '해외 직구',
+  '펀딩 · 킥스타터',
+  '무료 · 학교 예산',
+  '무료 · 선물',
+  '무료 · 나눔',
+];
+
+const SELL_PLACES = [
+  '보드라이프',
+  '당근',
+  '번개장터',
+  '중고나라',
+  '지인 양도',
+  '나눔 (무료)',
+  '학교·기관 기증',
+  '폐기',
+];
+
+/** 후보 목록을 담은 datalist 를 만들어 문서에 한 번만 심는다 */
+function ensureDatalist(id, values) {
+  let dl = document.getElementById(id);
+  if (dl) return id;
+  dl = el('datalist', { id });
+  dl.append(...values.map((v) => el('option', { value: v })));
+  document.body.append(dl);
+  return id;
+}
+
 /** 라벨 + 입력 한 쌍. 값이 바뀌면 note 에 바로 반영한다. */
-function noteField(label, { type = 'number', value, placeholder = '', onSet, step, min, max }) {
+function noteField(label, { type = 'number', value, placeholder = '', onSet, step, min, max, options }) {
   const input = el('input', { type, placeholder, value: value ?? '' });
   if (step != null) input.step = step;
   if (min != null) input.min = min;
   if (max != null) input.max = max;
+  // options 를 주면 고를 수 있는 목록이 붙는다(직접 입력도 그대로 된다)
+  if (options) input.setAttribute('list', ensureDatalist(options.id, options.values));
   input.onchange = () => {
     const raw = input.value.trim();
     onSet(raw === '' ? null : type === 'number' ? Number(raw) : raw);
@@ -1798,6 +1845,12 @@ function noteSection(g) {
             n.buy = { ...n.buy, price: v };
             if (v != null && !n.buy.date) n.buy.date = today();
             if (n.buy.price == null && !n.buy.date && !n.buy.from) delete n.buy;
+            // 구입가를 적었다는 것은 가지고 있다는 뜻이다. 아직 아무 표시도
+            // 없을 때만 보유로 바꾼다(이미 방출로 표시했다면 건드리지 않는다).
+            if (v != null && !state.flags[g.id]) {
+              state.flags[g.id] = 'own';
+              saveFlags();
+            }
             rerender();
           },
         }),
@@ -1812,9 +1865,11 @@ function noteSection(g) {
         noteField('구입처', {
           type: 'text',
           value: n.buy?.from,
-          placeholder: '보드라이프 중고',
+          placeholder: '고르거나 직접 입력',
+          options: { id: 'dl-buy-places', values: BUY_PLACES },
           onSet: (v) => {
             n.buy = { ...n.buy, from: v };
+            if (n.buy.price == null && !n.buy.date && !n.buy.from) delete n.buy;
             rerender();
           },
         })
@@ -1832,6 +1887,11 @@ function noteSection(g) {
             n.sell = { ...n.sell, price: v };
             if (v != null && !n.sell.date) n.sell.date = today();
             if (n.sell.price == null && !n.sell.date && !n.sell.to) delete n.sell;
+            // 팔았으면 더는 보유가 아니다. 방출로 옮긴다.
+            if (v != null && state.flags[g.id] !== 'skip') {
+              state.flags[g.id] = 'gone';
+              saveFlags();
+            }
             rerender();
           },
         }),
@@ -1846,9 +1906,11 @@ function noteSection(g) {
         noteField('판매처', {
           type: 'text',
           value: n.sell?.to,
-          placeholder: '당근',
+          placeholder: '고르거나 직접 입력',
+          options: { id: 'dl-sell-places', values: SELL_PLACES },
           onSet: (v) => {
             n.sell = { ...n.sell, to: v };
+            if (n.sell.price == null && !n.sell.date && !n.sell.to) delete n.sell;
             rerender();
           },
         })
@@ -1965,19 +2027,29 @@ const titleOf = (id) => {
   return g ? g.kor ?? g.name : `#${id}`;
 };
 
+/**
+ * 서재 통계.
+ *
+ * 대상은 "기록이 있는 게임"과 "표시(관심·보유·방출)를 해 둔 게임"의 합집합이다.
+ * 값을 하나도 안 적고 보유 버튼만 누른 게임도 서재에 있어야 하기 때문이다.
+ */
 function shelfStats() {
-  const ids = Object.keys(notes);
+  const ids = [...new Set([...Object.keys(notes), ...Object.keys(state.flags)])];
   let spent = 0;
   let earned = 0;
   let plays = 0;
   let rated = 0;
   let diffSum = 0;
   let diffN = 0;
-  const dusty = []; // 샀는데 한 번도 안 한 것
-  const stale = []; // 180일 넘게 안 한 것
+  const own = []; // 보유 중
+  const gone = []; // 방출함
+  const want = []; // 관심
+  const dusty = []; // 보유인데 한 번도 안 한 것
+  const stale = []; // 180일 넘게 안 꺼낸 것
 
   for (const id of ids) {
-    const n = notes[id];
+    const n = notes[id] ?? {};
+    const flag = state.flags[id];
     if (n.buy?.price != null) spent += n.buy.price;
     if (n.sell?.price != null) earned += n.sell.price;
     const pc = playCount(id);
@@ -1990,22 +2062,38 @@ function shelfStats() {
         diffN++;
       }
     }
-    if (n.buy && !pc) dusty.push(id);
-    else {
+
+    if (flag === 'own') own.push(id);
+    else if (flag === 'gone') gone.push(id);
+    else if (flag === 'want') want.push(id);
+
+    // "샀는데 안 한 것"은 지금 가지고 있는 것만 따진다. 이미 방출했다면
+    // 알려줘봐야 할 수 있는 일이 없다.
+    if (flag === 'own' && !pc) dusty.push(id);
+    else if (flag !== 'gone') {
       const since = daysSince(lastPlayed(id));
       if (since != null && since >= 180) stale.push({ id, since });
     }
   }
   stale.sort((a, b) => b.since - a.since);
+  // 보유 목록은 비싼 것부터. 관심은 목표가가 있는 것부터.
+  const price = (id) => notes[id]?.buy?.price ?? -1;
+  own.sort((a, b) => price(b) - price(a));
+  gone.sort((a, b) => (notes[b]?.sell?.date ?? '').localeCompare(notes[a]?.sell?.date ?? ''));
+  want.sort((a, b) => (notes[b]?.target ?? -1) - (notes[a]?.target ?? -1));
 
   return {
     tracked: ids.length,
+    own,
+    gone,
+    want,
     spent,
     earned,
     net: spent - earned,
     plays,
     rated,
     avgDiff: diffN ? diffSum / diffN : null,
+    // 1판당 비용은 "지금까지 쓴 돈"이 아니라 순지출 기준이다(되판 돈은 회수분).
     perPlay: plays ? Math.round((spent - earned) / plays) : null,
     hIndex: playHIndex(),
     dusty,
@@ -2048,40 +2136,76 @@ function openShelf() {
       ids.length > 24 ? el('span', { className: 'sub', textContent: `외 ${ids.length - 24}개` }) : null
     );
 
+  /** 목록 하나를 접이식 구역으로 */
+  const listSection = (title, ids, note, suffix) =>
+    ids.length
+      ? el(
+          'section',
+          {},
+          el('h3', { textContent: `${title} (${ids.length})` }),
+          note ? el('p', { className: 'sub', textContent: note }) : null,
+          gameLinks(ids, suffix)
+        )
+      : null;
+
+  const priceTag = (id) => {
+    const p = notes[id]?.buy?.price;
+    return p == null ? '' : ` · ${won(p)}`;
+  };
+  const targetTag = (id) => {
+    const t = notes[id]?.target;
+    return t == null ? '' : ` · 목표 ${won(t)}`;
+  };
+  const soldTag = (id) => {
+    const pf = profit(id);
+    return pf == null ? '' : ` · ${pf >= 0 ? '+' : '−'}${Math.abs(pf).toLocaleString('ko-KR')}원`;
+  };
+
   view.replaceChildren(
     close,
     el('h2', { textContent: '내 서재' }),
     s.tracked
-      ? el('p', { className: 'sub', textContent: `기록이 있는 게임 ${s.tracked}개` })
+      ? el('p', {
+          className: 'sub',
+          textContent: `보유 ${s.own.length} · 방출 ${s.gone.length} · 관심 ${s.want.length} (기록·표시가 있는 게임 ${s.tracked}개)`,
+        })
       : el('p', {
           className: 'sub',
-          textContent: '아직 기록이 없습니다. 게임을 열어 "내 기록"에 평점이나 구입가를 적어보세요.',
+          textContent:
+            '아직 비어 있습니다. 표에서 ● 보유를 누르거나, 게임을 열어 "내 기록"에 구입가를 적으면 여기에 쌓입니다.',
         }),
 
     el(
       'div',
       { className: 'shelf-stats' },
+      stat('보유 중', `${s.own.length}개`, s.gone.length ? `방출 ${s.gone.length}개` : ''),
       stat('쓴 돈', won(s.spent)),
       stat('되판 돈', won(s.earned)),
       stat('순지출', won(s.net), s.earned ? '쓴 돈 − 되판 돈' : ''),
       stat('총 플레이', `${s.plays}판`),
       stat('1판당 비용', s.perPlay == null ? '–' : won(s.perPlay), '순지출 ÷ 총 플레이'),
       stat('H-지수', String(s.hIndex), `${s.hIndex}개를 각각 ${s.hIndex}판 이상`),
-      stat('내가 매긴 평점', `${s.rated}개`),
       stat(
         'BGG와의 차이',
         s.avgDiff == null ? '–' : `${s.avgDiff > 0 ? '+' : ''}${s.avgDiff.toFixed(2)}`,
-        s.avgDiff == null ? '' : s.avgDiff > 0 ? '내가 더 후하다' : '내가 더 짜다'
+        s.avgDiff == null ? `내가 매긴 평점 ${s.rated}개` : s.avgDiff > 0 ? '내가 더 후하다' : '내가 더 짜다'
       )
     ),
+
+    listSection('보유 중', s.own, '표에서 ● 를 누른 게임입니다.', priceTag),
+    listSection('방출함', s.gone, '가지고 있었지만 이제 없는 게임입니다.', soldTag),
+    listSection('관심', s.want, '★ 로 담아둔 게임입니다.', targetTag),
 
     s.dusty.length
       ? el(
           'section',
           {},
           el('h3', { textContent: `사놓고 아직 안 한 게임 (${s.dusty.length})` }),
-          el('p', { className: 'sub', textContent: '구입 기록은 있는데 플레이 기록이 없습니다.' }),
-          gameLinks(s.dusty)
+          el('p', {
+            className: 'sub',
+            textContent: '보유 중인데 플레이 기록이 없습니다.',
+          }),
+          gameLinks(s.dusty, priceTag)
         )
       : null,
 

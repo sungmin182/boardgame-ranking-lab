@@ -1102,6 +1102,17 @@ tbody tr:hover .row-actions,
   color: var(--accent);
 }
 
+/* 방출(○)은 "이제 없다"는 뜻이므로 보유(●)와 같은 강조색을 주지 않는다.
+   나란히 있는 두 버튼이 같은 색이면 어느 상태인지 구분되지 않는다. */
+.flag[data-flag='gone'].on {
+  color: var(--text-dim);
+  background: var(--surface-3);
+}
+
+.flag[data-flag='skip'].on {
+  color: var(--down);
+}
+
 .row-actions:has(.flag.on) {
   opacity: 1;
 }
