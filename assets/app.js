@@ -304,6 +304,7 @@ function recompute() {
   $('#empty').hidden = list.length > 0;
   renderMore();
   renderExcludedNote();
+  renderPanelSummaries();
   syncUrl();
 }
 
@@ -1601,6 +1602,59 @@ function markPreset() {
   for (const btn of document.querySelectorAll('.preset-btn')) {
     btn.classList.toggle('on', JSON.stringify(PRESETS[btn.textContent]) === current);
   }
+  renderPanelSummaries();
+}
+
+/**
+ * 접힌 패널의 제목 옆에 붙는 한 줄 요약.
+ *
+ * 접었을 때 "지금 무슨 설정이었더라"를 다시 펴서 확인하게 만들면 접는 의미가 없다.
+ */
+function renderPanelSummaries() {
+  const scoreBox = $('#scoreSummary');
+  if (scoreBox) {
+    const current = JSON.stringify(state.weights);
+    const preset = Object.keys(PRESETS).find((n) => JSON.stringify(PRESETS[n]) === current);
+    const used = AXES.filter((a) => state.weights[a.key]);
+    scoreBox.textContent = preset
+      ? `· ${preset}`
+      : `· 직접 조절 (${used.map((a) => `${a.label} ${state.weights[a.key] > 0 ? '+' : ''}${state.weights[a.key]}`).join(', ')})`;
+  }
+
+  const filterBox = $('#filterSummary');
+  if (filterBox) {
+    const f = state.filters;
+    const def = DEFAULT_FILTERS();
+    let n = 0;
+    for (const [k, v] of Object.entries(f)) {
+      if (k === 'q') continue; // 검색은 상단바에 이미 보인다
+      if (k === 'mech' || k === 'cat') n += Object.keys(v).length;
+      else if (Array.isArray(v)) n += v.length ? 1 : 0;
+      else if (v !== def[k]) n += 1;
+    }
+    filterBox.textContent = n ? `· ${n}개 적용` : '· 전체';
+  }
+}
+
+/** 패널 제목의 ▾ 를 눌러 접고 편다. 상태는 브라우저에 남는다. */
+function initCollapsibles() {
+  for (const btn of document.querySelectorAll('.collapse-btn')) {
+    const panel = btn.closest('.panel');
+    const key = `lz.panel.${btn.dataset.panel}`;
+    const apply = (collapsed) => {
+      panel.classList.toggle('collapsed', collapsed);
+      btn.setAttribute('aria-expanded', String(!collapsed));
+      btn.title = collapsed ? '펴기' : '접기';
+      btn.setAttribute('aria-label', `${panel.querySelector('h2').textContent.trim()} ${btn.title}`);
+    };
+    apply(localStorage.getItem(key) === 'collapsed');
+    btn.onclick = () => {
+      const collapsed = !panel.classList.contains('collapsed');
+      localStorage.setItem(key, collapsed ? 'collapsed' : 'open');
+      apply(collapsed);
+    };
+  }
+  renderPanelSummaries();
 }
 
 function buildPresets() {
@@ -2021,6 +2075,7 @@ async function main() {
   buildFilters();
   renderHead();
   markPreset();
+  initCollapsibles();
 
   // URL로 들어온 필터 값을 UI에 반영
   $('#search').value = state.filters.q;

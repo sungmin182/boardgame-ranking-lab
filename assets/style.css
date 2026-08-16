@@ -443,6 +443,65 @@ main {
   gap: 9px;
   font-size: 14.5px;
   font-weight: 700;
+  min-width: 0;
+}
+
+/* ── 패널 접기 ──────────────────────────────────────────
+ * 점수 패널은 슬라이더 7개라 사이드바 높이를 거의 다 먹는다.
+ * 접어 두면 필터까지 한눈에 들어온다. 접힌 상태는 기억된다. */
+.collapse-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin-right: -2px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  flex: none;
+  transition: background 0.14s, color 0.14s;
+}
+
+.collapse-btn:hover {
+  background: var(--surface-3);
+  color: var(--accent);
+}
+
+.collapse-btn .chev {
+  display: block;
+  transition: transform 0.18s ease;
+}
+
+.panel.collapsed .collapse-btn .chev {
+  transform: rotate(-90deg);
+}
+
+.panel.collapsed .panel-body {
+  display: none;
+}
+
+/* 접혀 있어도 지금 어떤 설정인지는 보이게 한다 */
+.panel-summary {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.panel:not(.collapsed) .panel-summary {
+  display: none;
+}
+
+/* 접었을 때는 제목 줄 아래 여백이 필요 없다 */
+.panel.collapsed .panel-head {
+  margin-bottom: 0;
 }
 
 /* 섹션 번호 */

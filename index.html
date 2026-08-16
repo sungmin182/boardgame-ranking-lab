@@ -45,23 +45,38 @@
       <!-- ── 나만의 랭킹 점수 ───────────────────────────────── -->
       <section class="panel" id="scorePanel">
         <div class="panel-head">
-          <h2><span class="eyebrow">01</span>나만의 랭킹 점수</h2>
+          <h2>
+            <button class="collapse-btn" data-panel="score" aria-expanded="true" aria-controls="scoreBody">
+              <span class="chev" aria-hidden="true">▾</span>
+            </button>
+            <span class="eyebrow">01</span>나만의 랭킹 점수
+            <span class="panel-summary" id="scoreSummary"></span>
+          </h2>
           <div class="presets" id="presets"></div>
         </div>
-        <div class="sliders" id="sliders"></div>
-        <p class="hint">
-          각 항목의 가중치를 조절하면 표가 실시간으로 다시 정렬됩니다. 음수로 내리면 그 특성이
-          <em>적을수록</em> 높은 점수를 받습니다. 예: 인기도를 &minus;로 두면 아직 안 알려진 게임이 위로 올라옵니다.
-        </p>
+        <div class="panel-body" id="scoreBody">
+          <div class="sliders" id="sliders"></div>
+          <p class="hint">
+            각 항목의 가중치를 조절하면 표가 실시간으로 다시 정렬됩니다. 음수로 내리면 그 특성이
+            <em>적을수록</em> 높은 점수를 받습니다. 예: 인기도를 &minus;로 두면 아직 안 알려진 게임이 위로 올라옵니다.
+          </p>
+        </div>
       </section>
 
       <!-- ── 필터 ──────────────────────────────────────────── -->
       <section class="panel" id="filterPanel">
         <div class="panel-head">
-          <h2><span class="eyebrow">02</span>필터</h2>
+          <h2>
+            <button class="collapse-btn" data-panel="filter" aria-expanded="true" aria-controls="filterBody">
+              <span class="chev" aria-hidden="true">▾</span>
+            </button>
+            <span class="eyebrow">02</span>필터
+            <span class="panel-summary" id="filterSummary"></span>
+          </h2>
           <button id="resetFilters" class="ghost-btn">필터 초기화</button>
         </div>
 
+        <div class="panel-body" id="filterBody">
         <div class="filter-grid">
           <div class="field">
             <label>인원 <span class="sub" id="playersLabel">전체</span></label>
@@ -138,6 +153,7 @@
             </label>
             <div class="excluded-note" id="excludedNote" hidden></div>
           </div>
+        </div>
         </div>
       </section>
 
