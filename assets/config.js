@@ -45,9 +45,11 @@ window.LZ_CONFIG = {
       label: '부마갤 검색',
       // 디시인사이드 부루마불 마이너 갤러리. 제목+본문 검색.
       url: 'https://gall.dcinside.com/mgallery/board/lists?id=bulemarble&s_type=search_subject_memo&s_keyword={q}',
-      // PC 주소로 들어가면 휴대폰에서는 m.dcinside.com 으로 넘어가면서
-      // 검색어가 사라진다. 확인되면 여기에 모바일 주소를 넣을 것.
-      mobile: '',
+      // 모바일은 도메인도 파라미터도 다르다. PC 주소로 들어가면 m.dcinside.com 으로
+      // 넘어가면서 검색어가 통째로 떨어져 나가 갤러리 첫 화면만 열렸다.
+      //   PC     s_type=search_subject_memo & s_keyword=
+      //   모바일  s_type=subject_m          & serval=      (소문자다)
+      mobile: 'https://m.dcinside.com/board/bulemarble?s_type=subject_m&serval={q}',
     },
 
     daangn: {

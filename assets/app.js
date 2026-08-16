@@ -1213,10 +1213,24 @@ const isMobile = () => isAndroid() || isIOS();
  * (PC 주소가 모바일에서 다른 주소로 넘어가며 검색어가 사라지는 경우가 있다).
  * 안드로이드에서 앱을 열어야 하는 곳은 intent:// 로 패키지를 직접 지정한다.
  */
-function externalLink(key, q) {
+/**
+ * 바깥 사이트에 넘길 검색어를 다듬는다.
+ *
+ * 우리 쪽 이름은 BGG 표기라 "팬데믹 레거시: 시즌 1" 처럼 콜론이 들어간다.
+ * 중고 매물 제목이나 커뮤니티 글은 그렇게 안 쓰기 때문에 그대로 넣으면
+ * 결과가 거의 안 나온다. 구분기호만 공백으로 풀어 준다.
+ */
+const searchTerm = (name) =>
+  String(name ?? '')
+    .replace(/[:：·–—]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+function externalLink(key, name) {
   const conf = CONFIG.LINKS?.[key];
   if (!conf?.url) return null;
 
+  const q = searchTerm(name);
   const fill = (tpl) => tpl.replace('{q}', encodeURIComponent(q));
   const web = fill(isMobile() && conf.mobile ? conf.mobile : conf.url);
   const a = el('a', { className: 'ghost-btn', textContent: `${conf.label} ↗`, rel: 'noopener' });
