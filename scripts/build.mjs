@@ -32,6 +32,15 @@ export async function build() {
   // data/korean-names.json 에 적힌 값이 있으면 그것으로 덮어쓴다(직접 고치기 위한 파일).
   const overrides = (await readJson(path.join(ROOT, 'data', 'korean-names.json'), {})) ?? {};
 
+  /*
+   * 손으로 채워 넣는 값(data/game-overrides.json).
+   *
+   * 평가가 적은 게임은 BGG 항목이 덜 채워져 있어 인원·시간이 0으로 비어 있다.
+   * 그러면 수업 계획에서 모둠 수도 차시 초과도 계산할 수 없다.
+   * 상자에 적힌 값을 여기에 넣어 두면 그쪽이 우선한다.
+   */
+  const specOverrides = (await readJson(path.join(ROOT, 'data', 'game-overrides.json'), {})) ?? {};
+
   // 국내 발매사 목록 (data/kr-publishers.json). 비교는 소문자로 맞춰서 한다.
   const krPubFile = await readJson(path.join(ROOT, 'data', 'kr-publishers.json'), {});
   const krPubs = new Map(
@@ -58,6 +67,7 @@ export async function build() {
   let fromOverride = 0;
   let krCount = 0;
   let extraUsed = 0;
+  let overrideUsed = 0;
 
   for (const r of [...ranks.games, ...extras]) {
     const d = await readJson(path.join(CACHE, `${r.id}.json`));
@@ -79,6 +89,11 @@ export async function build() {
     const kr = Boolean(kor || krPub);
     if (kr) krCount++;
     if (r.extra) extraUsed++;
+
+    /** 손으로 채운 값 → BGG 값 → (0이면) 값 없음 */
+    const ov = specOverrides[r.id] ?? {};
+    const spec = (key, bggValue) => ov[key] ?? (bggValue || null);
+    if (Object.keys(ov).some((k) => k !== '_이름')) overrideUsed++;
 
     /*
      * 따로 지정한 게임은 랭킹 스냅샷에 없으므로 평점·순위를 상세 캐시에서 가져온다.
@@ -119,19 +134,21 @@ export async function build() {
       /*
        * 스펙
        *
-       * 난이도는 투표가 하나도 없으면 BGG가 0을 준다. 그대로 두면 "난이도 0"
-       * 이라는 있을 수 없는 값이 표시되고(척도는 1~5다) 정렬에서도 맨 앞에 온다.
-       * 평가가 적은 국내 게임이 대개 이 경우라 값 없음으로 바꾼다.
+       * BGG는 값이 없을 때 0을 준다. 인원 0명, 시간 0분, 난이도 0은 있을 수 없는
+       * 값인데(난이도 척도는 1~5다) 그대로 두면 화면에 0으로 찍히고 정렬에서도
+       * 맨 앞에 온다. 평가가 적은 국내 게임이 대개 이 경우라 값 없음으로 바꾼다.
+       * spec() 이 손으로 채운 값(game-overrides.json)을 먼저 쓰고, 없으면 BGG 값,
+       * 그것도 0이면 null 을 돌려준다.
        */
-      weight: d.weight ? +d.weight.toFixed(2) : null,
+      weight: spec('weight', d.weight) != null ? +spec('weight', d.weight).toFixed(2) : null,
       weightVotes: d.weightVotes,
-      minPlayers: d.minPlayers,
-      maxPlayers: d.maxPlayers,
+      minPlayers: spec('minPlayers', d.minPlayers),
+      maxPlayers: spec('maxPlayers', d.maxPlayers),
       best: d.best,
       recommended: d.recommended,
-      minTime: d.minTime,
-      maxTime: d.maxTime,
-      minAge: d.minAge,
+      minTime: spec('minTime', d.minTime),
+      maxTime: spec('maxTime', d.maxTime),
+      minAge: spec('minAge', d.minAge),
       langDep: d.langDep,
 
       // 커뮤니티 규모
@@ -179,6 +196,7 @@ export async function build() {
   console.log(
     `[build] 국내 정발로 판정 ${krCount}개 (한글명 또는 국내 발매사 ${krPubs.size}곳 기준)`
   );
+  if (overrideUsed) console.log(`[build] 손으로 채운 스펙 ${overrideUsed}개 적용`);
   if (extras.length) {
     console.log(
       `[build] 따로 지정한 게임 ${extraUsed}/${extras.length}개 포함` +
