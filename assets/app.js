@@ -1183,11 +1183,8 @@ const CELL = {
         el(
           'span',
           { className: 'row-actions' },
-          flagButton(g, 'want', '★', '관심'),
-          flagButton(g, 'own', '●', '보유'),
-          // 보유 ● 와 짝이 되는 빈 원. 가지고 있었지만 이제 없는 게임이다.
-          flagButton(g, 'gone', '○', '방출'),
-          flagButton(g, 'skip', '✕', '제외'),
+          // 표시 종류는 FLAG_KINDS 한 곳에서 정한다(상세 패널의 버튼과 같은 목록)
+          ...FLAG_KINDS.map((k) => flagButton(g, k.type, k.glyph, k.label)),
           compareButton(g)
         )
       )
@@ -1973,6 +1970,8 @@ function refreshShelfIfOpen() {
 const FLAG_KINDS = [
   { type: 'want', glyph: '★', label: '관심' },
   { type: 'own', glyph: '●', label: '보유' },
+  // 해봤지만 갖고 있지는 않은 게임. 남의 것으로 하거나 모임에서 해본 경우다.
+  { type: 'tried', glyph: '◆', label: '체험' },
   { type: 'gone', glyph: '○', label: '방출' },
   { type: 'skip', glyph: '✕', label: '제외' },
 ];
@@ -2975,6 +2974,7 @@ function shelfStats() {
   let diffSum = 0;
   let diffN = 0;
   const own = []; // 보유 중
+  const tried = []; // 해봤지만 갖고 있지 않음
   const gone = []; // 방출함
   const want = []; // 관심
   const dusty = []; // 보유인데 한 번도 안 한 것
@@ -2997,6 +2997,7 @@ function shelfStats() {
     }
 
     if (flag === 'own') own.push(id);
+    else if (flag === 'tried') tried.push(id);
     else if (flag === 'gone') gone.push(id);
     else if (flag === 'want') want.push(id);
 
@@ -3018,6 +3019,7 @@ function shelfStats() {
   return {
     tracked: ids.length,
     own,
+    tried,
     gone,
     want,
     spent,
@@ -3170,6 +3172,11 @@ function openShelf() {
     const t = notes[id]?.target;
     return t == null ? '' : ` · 목표 ${won(t)}`;
   };
+  // 체험은 값을 치를 일이 없으니 내 평점을 달아 준다
+  const ratingTag = (id) => {
+    const r = notes[id]?.rating;
+    return r == null ? '' : ` · ${r}점`;
+  };
   const soldTag = (id) => {
     const pf = profit(id);
     return pf == null ? '' : ` · ${pf >= 0 ? '+' : '−'}${Math.abs(pf).toLocaleString('ko-KR')}원`;
@@ -3182,7 +3189,7 @@ function openShelf() {
     s.tracked
       ? el('p', {
           className: 'sub',
-          textContent: `보유 ${s.own.length} · 방출 ${s.gone.length} · 관심 ${s.want.length} (기록·표시가 있는 게임 ${s.tracked}개)`,
+          textContent: `보유 ${s.own.length} · 체험 ${s.tried.length} · 방출 ${s.gone.length} · 관심 ${s.want.length} (기록·표시가 있는 게임 ${s.tracked}개)`,
         })
       : el('p', {
           className: 'sub',
@@ -3208,6 +3215,7 @@ function openShelf() {
     ),
 
     listSection('보유 중', s.own, '표에서 ● 를 누른 게임입니다.', priceTag, 'own'),
+    listSection('체험', s.tried, '해봤지만 갖고 있지는 않은 게임입니다.', ratingTag, 'tried'),
     listSection('방출함', s.gone, '가지고 있었지만 이제 없는 게임입니다.', soldTag, 'gone'),
     listSection('관심', s.want, '★ 로 담아둔 게임입니다.', targetTag, 'want'),
 
@@ -3533,6 +3541,7 @@ function buildTagBox(box, facetList, bucket) {
 const LIST_CHIPS = [
   { key: 'want', label: '★ 관심' },
   { key: 'own', label: '● 보유' },
+  { key: 'tried', label: '◆ 체험' },
   { key: 'gone', label: '○ 방출' },
   { key: 'unplayed', label: '아직 안 한 것' },
   { key: 'rated', label: '평점 매김' },
@@ -3565,7 +3574,8 @@ function syncListLabel() {
   const label = $('#listLabel');
   if (!label) return;
   const hit = LIST_CHIPS.find((c) => c.key === state.filters.list);
-  label.textContent = hit ? hit.label.replace(/^[★●○]\s*/, '') : '전체';
+  // 칩 라벨 앞의 기호는 떼고 이름만 보여준다
+  label.textContent = hit ? hit.label.replace(/^[★●◆○✕]\s*/, '') : '전체';
 }
 
 /** 서재에서 목록 하나를 눌렀을 때, 그 목록만 담긴 결과 화면으로 넘어간다 */

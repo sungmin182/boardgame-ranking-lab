@@ -54,6 +54,21 @@
      다크에서는 강조색이 밝아져서 흰 글자를 얹으면 대비가 무너진다. */
   --on-fill: #ffffff;
 
+  /*
+   * 표시(관심·보유·체험·방출·제외) 색.
+   *
+   * 다섯 개가 한 줄에 붙어 있으므로 색조가 서로 충분히 떨어져야 한다.
+   * 관심을 금색으로 두었더니 체험의 노랑과 거의 같아 보여서 파랑으로 옮겼다.
+   * 지금은 파랑·초록·노랑·빨강·회색이라 한눈에 갈린다.
+   */
+  --flag-want: #2a6fd6;
+  --flag-own: #1f6b4a;
+  /* 밝은 바탕에서 노랑은 그냥 쓰면 아이콘이 흐려 보인다(대비 2.9).
+     글자·아이콘용으로는 진하게 내린 값을 쓴다. */
+  --flag-tried: #8a6508;
+  --flag-gone: #c0442f;
+  --flag-skip: #8a837a;
+
   /* 별 모양. 마스크로 쓰기 때문에 색은 아래 요소가 정한다. */
   --star-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.6l2.9 5.9 6.5.95-4.7 4.58 1.11 6.47L12 17.45l-5.81 3.05 1.11-6.47-4.7-4.58 6.5-.95z'/%3E%3C/svg%3E");
 
@@ -107,6 +122,13 @@
 
     --on-fill: #10130f;
 
+    /* 어두운 바탕에서는 밝게 올려 잡는다 */
+    --flag-want: #5aa3f0;
+    --flag-own: #4fb98a;
+    --flag-tried: #e8c14a;
+    --flag-gone: #e08268;
+    --flag-skip: #868f9a;
+
     --shadow-sm: none;
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
     --shadow-lg: 0 16px 48px -12px rgba(0, 0, 0, 0.6);
@@ -152,6 +174,12 @@
   --series-4: #c98500;
 
   --on-fill: #10130f;
+
+  --flag-want: #5aa3f0;
+  --flag-own: #4fb98a;
+  --flag-tried: #e8c14a;
+  --flag-gone: #e08268;
+  --flag-skip: #868f9a;
 
   --shadow-sm: none;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
@@ -1114,25 +1142,33 @@ tbody tr:hover .row-actions,
 }
 
 /*
- * 네 표시는 서로 다른 색을 갖는다. 나란히 붙어 있어서 회색 두 개나
- * 초록 두 개가 섞이면 무엇이 켜져 있는지 한눈에 안 들어온다.
+ * 다섯 표시는 서로 다른 색을 갖는다. 한 줄에 붙어 있어서 비슷한 색이 섞이면
+ * 무엇이 켜져 있는지 한눈에 안 들어온다.
  *
- *   관심 ★  금색   — 갖고 싶은 것
+ *   관심 ★  파랑   — 갖고 싶은 것
  *   보유 ●  초록   — 지금 있는 것
+ *   체험 ◆  노랑   — 해봤지만 갖고 있지는 않은 것
  *   방출 ○  빨강   — 있었지만 내보낸 것
  *   제외 ✕  회색   — 목록에서 숨기기만 하는 것(수집과 무관하므로 가장 약하게)
  */
 .flag[data-flag='want'].on {
-  color: var(--medal-1);
+  color: var(--flag-want);
+}
+
+.flag[data-flag='own'].on {
+  color: var(--flag-own);
+}
+
+.flag[data-flag='tried'].on {
+  color: var(--flag-tried);
 }
 
 .flag[data-flag='gone'].on {
-  color: var(--down);
-  background: var(--down-soft);
+  color: var(--flag-gone);
 }
 
 .flag[data-flag='skip'].on {
-  color: var(--text-dim);
+  color: var(--flag-skip);
   background: var(--surface-3);
 }
 
@@ -2108,24 +2144,32 @@ body.resizing {
   color: var(--accent);
 }
 
-/* 표의 아이콘 버튼과 같은 색 규칙을 따른다 (관심 금색 / 보유 초록 /
-   방출 빨강 / 제외 회색). 켜진 것은 채워서 확실히 구분한다. */
+/* 표의 아이콘 버튼과 같은 색 규칙을 따른다. 켜진 것은 채워서 확실히 구분한다. */
 .drawer-flag.on {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--flag-own);
+  border-color: var(--flag-own);
   color: var(--on-fill);
 }
 
 .drawer-flag[data-flag='want'].on {
-  background: var(--medal-1);
-  border-color: var(--medal-1);
-  /* 금색은 라이트·다크 모두 밝아서 항상 어두운 글자를 얹는다 */
-  color: #1c1a17;
+  background: var(--flag-want);
+  border-color: var(--flag-want);
+  /* 다크에서는 파랑이 밝아져 흰 글자를 얹으면 대비가 2.6까지 떨어진다.
+     --on-fill 은 라이트에서 흰색, 다크에서 어두운 색이라 양쪽 다 맞는다. */
+  color: var(--on-fill);
+}
+
+.drawer-flag[data-flag='tried'].on {
+  background: var(--flag-tried);
+  border-color: var(--flag-tried);
+  /* 라이트에서는 진한 황갈색, 다크에서는 밝은 노랑이라 글자색이 반대여야 한다.
+     --on-fill 이 그 역할을 한다(라이트=흰색, 다크=어두운 색). */
+  color: var(--on-fill);
 }
 
 .drawer-flag[data-flag='gone'].on {
-  background: var(--down);
-  border-color: var(--down);
+  background: var(--flag-gone);
+  border-color: var(--flag-gone);
   color: var(--on-fill);
 }
 
@@ -2541,15 +2585,26 @@ body.resizing {
   color: var(--down);
 }
 
+.shelf-links.tone-tried .shelf-link {
+  border-color: color-mix(in srgb, var(--flag-tried) 35%, var(--border));
+  color: color-mix(in srgb, var(--flag-tried) 75%, var(--text));
+}
+
+.shelf-links.tone-tried .shelf-link:hover {
+  border-color: var(--flag-tried);
+  background: color-mix(in srgb, var(--flag-tried) 12%, transparent);
+  color: color-mix(in srgb, var(--flag-tried) 75%, var(--text));
+}
+
 .shelf-links.tone-want .shelf-link {
-  border-color: color-mix(in srgb, var(--medal-1) 35%, var(--border));
-  color: color-mix(in srgb, var(--medal-1) 80%, var(--text));
+  border-color: color-mix(in srgb, var(--flag-want) 35%, var(--border));
+  color: var(--flag-want);
 }
 
 .shelf-links.tone-want .shelf-link:hover {
-  border-color: var(--medal-1);
-  background: color-mix(in srgb, var(--medal-1) 12%, transparent);
-  color: color-mix(in srgb, var(--medal-1) 80%, var(--text));
+  border-color: var(--flag-want);
+  background: color-mix(in srgb, var(--flag-want) 12%, transparent);
+  color: var(--flag-want);
 }
 
 .shelf-backup {
