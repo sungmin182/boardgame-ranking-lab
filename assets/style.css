@@ -2508,6 +2508,28 @@ body.resizing {
   flex-wrap: wrap;
 }
 
+/* 구역 안에서 좁혀 보기 — 보유가 수백 개면 목록만으로는 못 찾는다 */
+.shelf-narrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0 4px;
+}
+
+.shelf-narrow-q {
+  width: auto;
+  min-width: 200px;
+  flex: 1 1 200px;
+  max-width: 320px;
+}
+
+.shelf-narrow .chips {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
 .shelf-section-actions {
   display: flex;
   gap: 6px;

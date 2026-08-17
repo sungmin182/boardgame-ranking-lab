@@ -472,7 +472,21 @@ const COLUMNS = [
 
 const visibleColumns = () => COLUMNS.filter((c) => !c.mine || state.showNotes);
 
-function recompute() {
+/**
+ * 자리를 되돌릴 때 한 번에 다시 그릴 수 있는 최대 줄 수.
+ * 이보다 많이 내려가 있었으면 여기까지만 그리고 나머지는 스크롤에 맡긴다.
+ */
+const RESTORE_MAX = 400;
+
+/**
+ * 목록을 다시 거르고 정렬해 그린다.
+ *
+ * keepPosition: 보고 있던 줄 수와 스크롤 위치를 되돌린다.
+ *   표시(관심·보유)를 눌렀을 때처럼 목록이 거의 그대로일 때만 쓴다.
+ *   가중치·필터를 바꿀 때 쓰면 순서가 달라져 자리가 의미도 없고, 그려둔 줄을
+ *   전부 다시 만드느라 느려진다.
+ */
+function recompute({ keepPosition = false } = {}) {
   const f = state.filters;
   const list = state.data.games.filter((g) => matches(g, f));
   for (const g of list) g._score = rawScore(g);
@@ -497,16 +511,20 @@ function recompute() {
   });
 
   /*
-   * 스크롤로 내려와 있던 만큼은 다시 그려 준다.
+   * 보고 있던 자리를 되돌릴지.
    *
-   * 전에는 무조건 80개만 그려서, 500줄쯤 내려온 상태에서 표시 하나만 눌러도
-   * 목록이 80줄로 쪼그라들었다. 그러면 스크롤이 위로 튀고, 다시 내려가며
-   * 80개씩 채우는 동안 화면이 멈춘 것처럼 보인다.
-   * 보고 있던 위치도 함께 되돌린다.
+   * 표시(관심·보유)를 눌렀을 때처럼 목록이 거의 그대로일 때만 되돌린다.
+   * 가중치나 필터를 바꾸면 순서 자체가 달라져서 원래 자리가 의미를 잃고,
+   * 그때까지 그려둔 줄을 전부 다시 만드느라 오히려 크게 느려진다.
+   * (1000줄 그려진 상태에서 슬라이더를 움직이면 브라우저가 멈출 정도였다.)
+   *
+   * 되돌릴 때도 상한을 둔다. 수천 줄을 한 번에 다시 만들면 그 자체가 멈춤이다.
    */
   const box = $('#tableWrap');
-  const keepScroll = box.scrollTop;
-  const keepRendered = Math.min(state.rendered, list.length);
+  const keepScroll = keepPosition ? box.scrollTop : 0;
+  const keepRendered = keepPosition
+    ? Math.min(state.rendered, list.length, RESTORE_MAX)
+    : 0;
 
   state.view = list;
   state.rendered = 0;
@@ -546,6 +564,22 @@ function repaintFlags(id) {
       btn.classList.toggle('on', state.flags[id] === btn.dataset.flag);
     }
   }
+}
+
+/**
+ * 다음 화면 갱신에 맞춰 한 번만 다시 그린다.
+ *
+ * 슬라이더를 끄는 동안 input 이 초당 수십 번 나온다. 그때마다 1만 개를 거르고
+ * 정렬하고 다시 그리면 하나도 못 따라가 뚝뚝 끊긴다. 프레임당 한 번으로 묶으면
+ * 중간 값은 건너뛰고 마지막 상태만 그린다.
+ */
+let recomputeFrame = null;
+function recomputeSoon() {
+  if (recomputeFrame) return;
+  recomputeFrame = requestAnimationFrame(() => {
+    recomputeFrame = null;
+    recompute();
+  });
 }
 
 /** 표 / 카드 중 어느 쪽을 보여줄지 화면에 반영한다 */
@@ -671,7 +705,7 @@ function flagButton(g, type, glyph, title) {
      * 목록이 달라지지 않는 경우에는 그 줄의 아이콘만 다시 칠한다.
      * 1만 개를 매번 거르고 정렬하고 다시 그리면 누를 때마다 화면이 끊긴다.
      */
-    if (flagAffectsList(prev, state.flags[g.id])) recompute();
+    if (flagAffectsList(prev, state.flags[g.id])) recompute({ keepPosition: true });
     else {
       repaintFlags(g.id);
       renderExcludedNote();
@@ -684,7 +718,7 @@ function flagButton(g, type, glyph, title) {
         action: () => {
           delete state.flags[g.id];
           saveFlags();
-          if (flagAffectsList('skip', undefined)) recompute();
+          if (flagAffectsList('skip', undefined)) recompute({ keepPosition: true });
           else {
             repaintFlags(g.id);
             renderExcludedNote();
@@ -2077,7 +2111,7 @@ function drawerFlags(g) {
           saveFlags();
           paint();
           // 목록이 달라질 때만 전체를 다시 만든다(표의 표시 버튼과 같은 이유)
-          if (flagAffectsList(prev, state.flags[g.id])) recompute();
+          if (flagAffectsList(prev, state.flags[g.id])) recompute({ keepPosition: true });
           else {
             repaintFlags(g.id);
             renderExcludedNote();
@@ -3498,6 +3532,30 @@ function openShelf() {
   const listSection = (title, ids, note, suffix, listKey) => {
     if (!ids.length) return null;
 
+    /*
+     * 구역 안에서 좁혀 보기.
+     *
+     * 보유가 284개쯤 되면 목록을 훑는 것만으로는 원하는 것을 못 찾는다.
+     * 이름으로 찾거나, 정발된 것만 보거나, 수업에 쓸 만한 시간대만 볼 수 있게 한다.
+     */
+    const narrow = { q: '', kr: false, short: false };
+    const apply = (list) =>
+      list.filter((item) => {
+        const g = gameById(item.id ?? item);
+        if (!g) return !narrow.q && !narrow.kr && !narrow.short;
+        if (narrow.kr && !g.kr) return false;
+        if (narrow.short && !(g.maxTime != null && g.maxTime <= plan.settings.minutes)) return false;
+        if (narrow.q) {
+          const q = narrow.q.toLowerCase();
+          const hit =
+            g.kor?.toLowerCase().includes(q) ||
+            g.name?.toLowerCase().includes(q) ||
+            g.korAlt?.some((n) => n.toLowerCase().includes(q));
+          if (!hit) return false;
+        }
+        return true;
+      });
+
     const body = el('div', {});
     // 목록 ↔ 카드 전환. 어느 쪽으로 봤는지는 다음에 열 때도 유지된다.
     const modeKey = `lz.shelfView.${listKey ?? title}`;
@@ -3505,12 +3563,21 @@ function openShelf() {
 
     const toggle = el('button', { className: 'ghost-btn' });
 
+    const countLabel = el('span', { className: 'sub' });
+
     const paint = () => {
       toggle.textContent = asCards ? '목록으로' : '카드로';
       localStorage.setItem(modeKey, asCards ? 'cards' : 'list');
+      const shown = apply(ids);
+      countLabel.textContent =
+        shown.length === ids.length ? '' : `${ids.length}개 중 ${shown.length}개`;
       setChildren(
         body,
-        asCards ? shelfCards(ids, suffix) : gameLinks(ids, suffix, listKey)
+        shown.length
+          ? asCards
+            ? shelfCards(shown, suffix)
+            : gameLinks(shown, suffix, listKey)
+          : el('p', { className: 'sub', textContent: '조건에 맞는 게임이 없습니다.' })
       );
     };
 
@@ -3518,6 +3585,45 @@ function openShelf() {
       asCards = !asCards;
       paint();
     };
+
+    // 좁혀 보기 줄
+    const search = el('input', {
+      type: 'search',
+      className: 'sync-input shelf-narrow-q',
+      placeholder: '이 목록에서 이름으로 찾기',
+    });
+    let qt;
+    search.oninput = () => {
+      clearTimeout(qt);
+      qt = setTimeout(() => {
+        narrow.q = search.value.trim();
+        paint();
+      }, 160);
+    };
+
+    const chip = (label, key, title) => {
+      const b = el('button', { className: 'chip', textContent: label, title });
+      b.onclick = () => {
+        narrow[key] = !narrow[key];
+        b.classList.toggle('on', narrow[key]);
+        paint();
+      };
+      return b;
+    };
+
+    const narrowRow = el(
+      'div',
+      { className: 'shelf-narrow' },
+      search,
+      el(
+        'div',
+        { className: 'chips' },
+        chip('정발', 'kr', '한글 발매명이 있거나 국내 발매사가 등록된 게임'),
+        chip(`${plan.settings.minutes}분 이내`, 'short', '수업 한 차시 안에 끝나는 게임')
+      ),
+      countLabel
+    );
+
     paint();
 
     return el(
@@ -3541,6 +3647,8 @@ function openShelf() {
         )
       ),
       note ? el('p', { className: 'sub', textContent: note }) : null,
+      // 목록이 길어지면 눈으로 훑기 어렵다. 8개부터 좁혀 보기 줄을 붙인다.
+      ids.length >= 8 ? narrowRow : null,
       body
     );
   };
@@ -3794,9 +3902,9 @@ function buildSliders() {
       input.dataset.axis = axis.key;
       input.oninput = () => {
         state.weights[axis.key] = Number(input.value);
-        paintVal(Number(input.value));
+        paintVal(Number(input.value)); // 숫자는 바로 바꿔 손끝 반응을 유지한다
         markPreset();
-        recompute();
+        recomputeSoon();
       };
       return el(
         'div',
