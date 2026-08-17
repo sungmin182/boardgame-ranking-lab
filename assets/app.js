@@ -219,6 +219,7 @@ function saveNotes() {
   for (const [id, n] of Object.entries(notes)) {
     const empty =
       n.rating == null &&
+      n.qty == null &&
       n.fair == null &&
       n.target == null &&
       !n.memo &&
@@ -244,6 +245,19 @@ function noteFor(id) {
  * "총 몇 판" 숫자만 적어도 1판당 비용과 "아직 안 한 것"이 동작하도록,
  * 날짜·승자까지 남기고 싶을 때만 아래 플레이 기록을 쓰게 나눠 두었다.
  */
+/**
+ * 가지고 있는 벌 수.
+ *
+ * 수업에서는 한 벌로 부족한 경우가 흔해서(학급을 모둠으로 나누므로) 몇 벌인지가
+ * 중요하다. 따로 적지 않았어도 보유로 표시했으면 한 벌로 친다 — 대부분 한 벌이라,
+ * 그렇게 두면 아무것도 입력하지 않아도 계산이 맞는다.
+ */
+const ownedQty = (id) => {
+  const q = noteOf(id)?.qty;
+  if (q != null) return q;
+  return state.flags[id] === 'own' ? 1 : 0;
+};
+
 const playCount = (id) => {
   const n = noteOf(id);
   return (n?.plays?.length ?? 0) + (n?.playsExtra ?? 0);
@@ -2007,6 +2021,17 @@ function refreshShelfIfOpen() {
   if (!$('#shelfView').hidden) openShelf();
 }
 
+/**
+ * 수업 계획이 열려 있으면 다시 그린다.
+ *
+ * 계획의 판단(몇 벌 부족한가, 보유 중인가)은 내 기록과 표시에서 나온다.
+ * 상세 패널을 겹쳐 띄운 채 수량이나 보유 표시를 고치면 뒤의 계획이 옛 값을
+ * 들고 있게 되므로 함께 갱신한다.
+ */
+function refreshPlanIfOpen() {
+  if (!$('#planView').hidden) openPlan();
+}
+
 /** 표시 종류. 표의 작은 아이콘 버튼과 상세 패널의 큰 버튼이 같은 목록을 쓴다. */
 const FLAG_KINDS = [
   { type: 'want', glyph: '★', label: '관심' },
@@ -2051,6 +2076,7 @@ function drawerFlags(g) {
             renderPanelSummaries();
           }
           refreshShelfIfOpen();
+          refreshPlanIfOpen();
         };
         return btn;
       })
@@ -2296,6 +2322,7 @@ function noteSection(g) {
     recompute();
     paint();
     refreshShelfIfOpen();
+    refreshPlanIfOpen();
   };
 
   const paint = () => {
@@ -2331,10 +2358,25 @@ function noteSection(g) {
         rerender();
       }),
 
-      // ── 가격 기준
+      // ── 보유 수량 · 가격 기준
       el(
         'div',
         { className: 'note-grid' },
+        noteField('보유 수량 (벌)', {
+          value: n.qty,
+          min: 0,
+          max: 99,
+          placeholder: state.flags[g.id] === 'own' ? '1' : '0',
+          onSet: (v) => {
+            n.qty = v;
+            // 수량을 1 이상 적었다면 가지고 있다는 뜻이다
+            if (v > 0 && !state.flags[g.id]) {
+              state.flags[g.id] = 'own';
+              saveFlags();
+            }
+            rerender();
+          },
+        }),
         noteField('적정가 (내 기준)', {
           value: n.fair,
           placeholder: '45000',
@@ -2603,12 +2645,16 @@ function classNotes(g) {
     }
   }
 
-  // 학급 전체가 하려면 몇 벌이 필요한가
+  // 학급 전체가 하려면 몇 벌이 필요하고, 몇 벌 가지고 있는가
   if (g.maxPlayers) {
     const groups = Math.ceil(students / g.maxPlayers);
+    const have = ownedQty(g.id);
+    const short = groups - have;
     out.push({
-      kind: groups > 1 ? 'info' : 'ok',
-      text: `${g.minPlayers}–${g.maxPlayers}인 · ${students}명이면 ${groups}모둠 (${groups}벌 필요)`,
+      kind: short > 0 ? 'warn' : 'ok',
+      text:
+        `${g.minPlayers}–${g.maxPlayers}인 · ${students}명이면 ${groups}모둠` +
+        (short > 0 ? ` · ${have}벌 보유, ${short}벌 부족` : ` · ${have}벌 보유 (충분)`),
     });
   }
 
@@ -2789,6 +2835,7 @@ async function syncPull({ quiet = false } = {}) {
     renderHead();
     recompute();
     refreshShelfIfOpen();
+    refreshPlanIfOpen();
   }
   return changed;
 }
@@ -3331,6 +3378,7 @@ function shelfStats() {
   let diffSum = 0;
   let diffN = 0;
   const own = []; // 보유 중
+  let copies = 0; // 보유 게임의 총 벌 수(같은 게임을 여러 벌 가진 경우 포함)
   const tried = []; // 해봤지만 갖고 있지 않음
   const gone = []; // 방출함
   const want = []; // 관심
@@ -3353,8 +3401,10 @@ function shelfStats() {
       }
     }
 
-    if (flag === 'own') own.push(id);
-    else if (flag === 'tried') tried.push(id);
+    if (flag === 'own') {
+      own.push(id);
+      copies += ownedQty(id);
+    } else if (flag === 'tried') tried.push(id);
     else if (flag === 'gone') gone.push(id);
     else if (flag === 'want') want.push(id);
 
@@ -3376,6 +3426,7 @@ function shelfStats() {
   return {
     tracked: ids.length,
     own,
+    copies,
     tried,
     gone,
     want,
@@ -3523,7 +3574,9 @@ function openShelf() {
 
   const priceTag = (id) => {
     const p = notes[id]?.buy?.price;
-    return p == null ? '' : ` · ${won(p)}`;
+    const q = notes[id]?.qty;
+    // 두 벌 이상은 눈에 띄어야 한다(수업에서 모둠 수를 채우는 데 쓴다)
+    return (p == null ? '' : ` · ${won(p)}`) + (q > 1 ? ` · ${q}벌` : '');
   };
   const targetTag = (id) => {
     const t = notes[id]?.target;
@@ -3557,7 +3610,12 @@ function openShelf() {
     el(
       'div',
       { className: 'shelf-stats' },
-      stat('보유 중', `${s.own.length}개`, s.gone.length ? `방출 ${s.gone.length}개` : ''),
+      stat(
+        '보유 중',
+        `${s.own.length}개`,
+        // 여러 벌 가진 게임이 있으면 총 벌 수도 함께 보여준다
+        s.copies > s.own.length ? `모두 ${s.copies}벌` : s.gone.length ? `방출 ${s.gone.length}개` : ''
+      ),
       stat('쓴 돈', won(s.spent)),
       stat('되판 돈', won(s.earned)),
       stat('순지출', won(s.net), s.earned ? '쓴 돈 − 되판 돈' : ''),
@@ -4196,7 +4254,7 @@ function toast(msg, undo = null) {
 }
 
 function exportCsv() {
-  const head = ['순위', '점수', '이름', '한글명', '국내정발', '국내발매사', '내평점', '플레이수', '마지막플레이', '구입가', '판매가', '1판당비용', '연도', '난이도', '최소인원', '최대인원', '추천인원', '최소시간', '최대시간', 'BGG평점', '유저평점', '평가수', '30일변동'];
+  const head = ['순위', '점수', '이름', '한글명', '국내정발', '국내발매사', '내평점', '보유수량', '플레이수', '마지막플레이', '구입가', '판매가', '1판당비용', '연도', '난이도', '최소인원', '최대인원', '추천인원', '최소시간', '최대시간', 'BGG평점', '유저평점', '평가수', '30일변동'];
   const rows = state.view.map((g) => [
     g.rank,
     g._score100,
@@ -4205,6 +4263,7 @@ function exportCsv() {
     g.kr ? 'O' : '',
     g.krPub ?? '',
     noteOf(g.id)?.rating ?? '',
+    ownedQty(g.id) || '',
     playCount(g.id) || '',
     lastPlayed(g.id) ?? '',
     noteOf(g.id)?.buy?.price ?? '',
