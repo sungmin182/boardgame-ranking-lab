@@ -246,10 +246,10 @@ function noteFor(id) {
  * 날짜·승자까지 남기고 싶을 때만 아래 플레이 기록을 쓰게 나눠 두었다.
  */
 /**
- * 가지고 있는 벌 수.
+ * 가지고 있는 개 수.
  *
- * 수업에서는 한 벌로 부족한 경우가 흔해서(학급을 모둠으로 나누므로) 몇 벌인지가
- * 중요하다. 따로 적지 않았어도 보유로 표시했으면 한 벌로 친다 — 대부분 한 벌이라,
+ * 수업에서는 한 개로 부족한 경우가 흔해서(학급을 모둠으로 나누므로) 몇 개인지가
+ * 중요하다. 따로 적지 않았어도 보유로 표시했으면 한 개로 친다 — 대부분 한 개이라,
  * 그렇게 두면 아무것도 입력하지 않아도 계산이 맞는다.
  */
 const ownedQty = (id) => {
@@ -383,8 +383,10 @@ function matches(g, f) {
   if (f.yearMin != null && (g.year == null || g.year < f.yearMin)) return false;
   if (f.yearMax != null && (g.year == null || g.year > f.yearMax)) return false;
 
-  if (f.rankMin != null && g.rank < f.rankMin) return false;
-  if (f.rankMax != null && g.rank > f.rankMax) return false;
+  // 순위가 없는 게임(평가 30개 미만)은 순위 범위를 걸면 빠진다.
+  // null 을 그대로 비교하면 0위처럼 취급돼 엉뚱하게 걸린다.
+  if (f.rankMin != null && (g.rank == null || g.rank < f.rankMin)) return false;
+  if (f.rankMax != null && (g.rank == null || g.rank > f.rankMax)) return false;
 
   if (f.votesMin != null && g.votes < f.votesMin) return false;
   if (f.votesMax != null && g.votes > f.votesMax) return false;
@@ -1091,7 +1093,11 @@ function renderCard(g) {
         // 점수는 지금 결과 집합 안에서만 계산된다. 서재처럼 결과 밖의 게임을
         // 그릴 때는 값이 없으므로 생략한다(0.0 으로 보이면 오해를 부른다).
         g._score100 != null ? scorePill(g._score100) : el('span', {}),
-        el('span', { className: 'card-rank', textContent: g.rank ? `${g.rank}위` : '–' })
+        el('span', {
+          className: 'card-rank',
+          textContent: g.rank ? `${g.rank}위` : '순위 없음',
+          title: g.rank ? '' : 'BGG 평가가 30개 미만이라 순위가 매겨지지 않은 게임',
+        })
       )
     ),
     el(
@@ -1166,8 +1172,10 @@ const CELL = {
   score: (g) => el('td', {}, scorePill(g._score100)),
   rank: (g) =>
     el('td', {
-      className: `rank-cell${g.rank <= 3 ? ` m${g.rank}` : ''}`,
+      // g.rank 가 null 이면 `null <= 3` 이 참이 되어 메달 색이 붙는다. 먼저 거른다.
+      className: `rank-cell${g.rank != null && g.rank <= 3 ? ` m${g.rank}` : ''}`,
       textContent: g.rank ?? '–',
+      title: g.rank == null ? 'BGG 순위가 아직 없는 게임 (평가 30개 미만)' : '',
     }),
   name: (g) =>
     el(
@@ -2024,7 +2032,7 @@ function refreshShelfIfOpen() {
 /**
  * 수업 계획이 열려 있으면 다시 그린다.
  *
- * 계획의 판단(몇 벌 부족한가, 보유 중인가)은 내 기록과 표시에서 나온다.
+ * 계획의 판단(몇 개 부족한가, 보유 중인가)은 내 기록과 표시에서 나온다.
  * 상세 패널을 겹쳐 띄운 채 수량이나 보유 표시를 고치면 뒤의 계획이 옛 값을
  * 들고 있게 되므로 함께 갱신한다.
  */
@@ -2362,7 +2370,7 @@ function noteSection(g) {
       el(
         'div',
         { className: 'note-grid' },
-        noteField('보유 수량 (벌)', {
+        noteField('보유 수량 (개)', {
           value: n.qty,
           min: 0,
           max: 99,
@@ -2645,7 +2653,7 @@ function classNotes(g) {
     }
   }
 
-  // 학급 전체가 하려면 몇 벌이 필요하고, 몇 벌 가지고 있는가
+  // 학급 전체가 하려면 몇 개이 필요하고, 몇 개 가지고 있는가
   if (g.maxPlayers) {
     const groups = Math.ceil(students / g.maxPlayers);
     const have = ownedQty(g.id);
@@ -2654,7 +2662,7 @@ function classNotes(g) {
       kind: short > 0 ? 'warn' : 'ok',
       text:
         `${g.minPlayers}–${g.maxPlayers}인 · ${students}명이면 ${groups}모둠` +
-        (short > 0 ? ` · ${have}벌 보유, ${short}벌 부족` : ` · ${have}벌 보유 (충분)`),
+        (short > 0 ? ` · ${have}개 보유, ${short}개 부족` : ` · ${have}개 보유 (충분)`),
     });
   }
 
@@ -3378,7 +3386,7 @@ function shelfStats() {
   let diffSum = 0;
   let diffN = 0;
   const own = []; // 보유 중
-  let copies = 0; // 보유 게임의 총 벌 수(같은 게임을 여러 벌 가진 경우 포함)
+  let copies = 0; // 보유 게임의 총 개 수(같은 게임을 여러 개 가진 경우 포함)
   const tried = []; // 해봤지만 갖고 있지 않음
   const gone = []; // 방출함
   const want = []; // 관심
@@ -3575,8 +3583,8 @@ function openShelf() {
   const priceTag = (id) => {
     const p = notes[id]?.buy?.price;
     const q = notes[id]?.qty;
-    // 두 벌 이상은 눈에 띄어야 한다(수업에서 모둠 수를 채우는 데 쓴다)
-    return (p == null ? '' : ` · ${won(p)}`) + (q > 1 ? ` · ${q}벌` : '');
+    // 두 개 이상은 눈에 띄어야 한다(수업에서 모둠 수를 채우는 데 쓴다)
+    return (p == null ? '' : ` · ${won(p)}`) + (q > 1 ? ` · ${q}개` : '');
   };
   const targetTag = (id) => {
     const t = notes[id]?.target;
@@ -3613,8 +3621,8 @@ function openShelf() {
       stat(
         '보유 중',
         `${s.own.length}개`,
-        // 여러 벌 가진 게임이 있으면 총 벌 수도 함께 보여준다
-        s.copies > s.own.length ? `모두 ${s.copies}벌` : s.gone.length ? `방출 ${s.gone.length}개` : ''
+        // 여러 개 가진 게임이 있으면 총 개 수도 함께 보여준다
+        s.copies > s.own.length ? `모두 ${s.copies}개` : s.gone.length ? `방출 ${s.gone.length}개` : ''
       ),
       stat('쓴 돈', won(s.spent)),
       stat('되판 돈', won(s.earned)),

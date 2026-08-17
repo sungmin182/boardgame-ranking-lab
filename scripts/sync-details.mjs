@@ -220,6 +220,19 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   if (!ranks) throw new Error('먼저 sync-ranks.mjs를 실행하세요.');
   const limit = Number(process.env.LIMIT || DEFAULT_LIMIT);
   const ids = ranks.games.slice(0, limit).map((g) => g.id);
+
+  /*
+   * 순위와 상관없이 꼭 받아야 하는 게임(data/extra-games.json).
+   *
+   * BGG는 평가 30개 이상인 게임에만 순위를 매기므로, 국내에서만 팔리는
+   * 교육용 게임은 랭킹 덤프에 아예 없다. LIMIT을 올려도 들어오지 않는다.
+   * 앞쪽에 붙여 수집 상한에 걸려 밀리지 않게 한다.
+   */
+  const extra = (await readJson(path.join(ROOT, 'data', 'extra-games.json'), {}))?.ids ?? [];
+  const known = new Set(ids);
+  const extraIds = extra.map(Number).filter((id) => Number.isFinite(id) && !known.has(id));
+  if (extraIds.length) console.log(`[details] 순위 밖 지정 게임 ${extraIds.length}개 포함`);
+  ids.unshift(...extraIds);
   await syncDetails(ids, {
     concurrency: Number(process.env.CONCURRENCY || 2),
     /*

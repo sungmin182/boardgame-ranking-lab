@@ -38,13 +38,28 @@ export async function build() {
     (krPubFile?.publishers ?? []).map((name) => [name.toLowerCase(), name])
   );
 
+  /*
+   * 순위 목록 + 따로 지정한 게임(data/extra-games.json).
+   *
+   * 지정 게임은 랭킹 덤프에 없거나(평가 30개 미만이라 순위가 없음) 수집 상한
+   * 밖이라 그냥 두면 영영 안 들어온다. 국내 발매 교육용 게임이 대개 그렇다.
+   * 순위 목록에 이미 있으면 중복해서 넣지 않는다.
+   */
+  const extraIds = (await readJson(path.join(ROOT, 'data', 'extra-games.json'), {}))?.ids ?? [];
+  const inRanks = new Set(ranks.games.map((g) => g.id));
+  const extras = extraIds
+    .map(Number)
+    .filter((id) => Number.isFinite(id) && !inRanks.has(id))
+    .map((id) => ({ id, extra: true }));
+
   const games = [];
   let missing = 0;
   let fromBgg = 0;
   let fromOverride = 0;
   let krCount = 0;
+  let extraUsed = 0;
 
-  for (const r of ranks.games) {
+  for (const r of [...ranks.games, ...extras]) {
     const d = await readJson(path.join(CACHE, `${r.id}.json`));
     if (!d) {
       missing++;
@@ -63,6 +78,17 @@ export async function build() {
       .find(Boolean) ?? null;
     const kr = Boolean(kor || krPub);
     if (kr) krCount++;
+    if (r.extra) extraUsed++;
+
+    /*
+     * 따로 지정한 게임은 랭킹 스냅샷에 없으므로 평점·순위를 상세 캐시에서 가져온다.
+     * 순위 자체가 없는 게임(평가 30개 미만)은 rank 가 0으로 오므로 null 로 바꾼다 —
+     * 0위처럼 보이면 정렬과 필터가 엉킨다.
+     */
+    const rank = r.extra ? (d.rank > 0 ? d.rank : null) : r.rank;
+    const bayes = r.extra ? d.bayes : r.bayes;
+    const average = r.extra ? d.average : r.average;
+    const votes = r.extra ? d.votes : r.votes;
 
     games.push({
       id: r.id,
@@ -73,23 +99,31 @@ export async function build() {
       // 국내 정발 여부와, 근거가 된 발매사 이름
       kr,
       krPub,
+      // 순위 목록 밖에서 따로 가져온 게임인지(화면에서 "순위 없음"으로 알린다)
+      extra: r.extra ? true : undefined,
       year: d.year ?? r.year,
-      rank: r.rank,
+      rank,
       href: d.href ?? r.url,
       image: d.image,
-      thumb: r.thumb,
+      thumb: r.extra ? d.image : r.thumb,
       desc: d.desc,
 
       // 평점 (일별 스냅샷 값을 정본으로 사용해 델타와 기준을 맞춘다)
-      bayes: r.bayes,
-      average: r.average,
-      votes: r.votes,
+      bayes,
+      average,
+      votes,
       stddev: d.stddev,
       // 긱 순위(베이즈)와 유저 평균의 차이. 저평가/고평가 탐지용
-      margin: r.average != null && r.bayes != null ? +(r.average - r.bayes).toFixed(3) : null,
+      margin: average != null && bayes != null ? +(average - bayes).toFixed(3) : null,
 
-      // 스펙
-      weight: d.weight != null ? +d.weight.toFixed(2) : null,
+      /*
+       * 스펙
+       *
+       * 난이도는 투표가 하나도 없으면 BGG가 0을 준다. 그대로 두면 "난이도 0"
+       * 이라는 있을 수 없는 값이 표시되고(척도는 1~5다) 정렬에서도 맨 앞에 온다.
+       * 평가가 적은 국내 게임이 대개 이 경우라 값 없음으로 바꾼다.
+       */
+      weight: d.weight ? +d.weight.toFixed(2) : null,
       weightVotes: d.weightVotes,
       minPlayers: d.minPlayers,
       maxPlayers: d.maxPlayers,
@@ -145,6 +179,12 @@ export async function build() {
   console.log(
     `[build] 국내 정발로 판정 ${krCount}개 (한글명 또는 국내 발매사 ${krPubs.size}곳 기준)`
   );
+  if (extras.length) {
+    console.log(
+      `[build] 따로 지정한 게임 ${extraUsed}/${extras.length}개 포함` +
+        (extraUsed < extras.length ? ' (나머지는 아직 상세를 못 받았습니다)' : '')
+    );
+  }
   // 상위 100위권은 대부분 정발되어 있어 BGG 한글명이 붙는다. 0에 가까우면
   // 상세 캐시가 옛 형식이라는 뜻이다(CI 캐시 복원 사고가 실제로 있었다).
   if (games.length > 200 && fromBgg < 50) {
