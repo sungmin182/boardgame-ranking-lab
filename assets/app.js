@@ -1922,6 +1922,7 @@ function openDrawer(g) {
     g.image ? el('img', { className: 'cover', src: g.image, alt: '', loading: 'lazy' }) : null,
     g.desc ? el('p', { className: 'sub', textContent: g.desc }) : null,
     drawerFlags(g),
+    drawerPlan(g),
     actions,
     liveBox,
     kv,
@@ -1952,6 +1953,46 @@ function openDrawer(g) {
   );
 
   if (CONFIG.LIVE_PROXY) loadReviews(g, reviewBox);
+}
+
+/**
+ * 상세 패널에서 바로 수업 계획에 담는 줄.
+ *
+ * 게임을 살펴보다가 "이건 5월에 쓰면 되겠다" 싶을 때 화면을 옮기지 않고
+ * 담을 수 있어야 한다. 이미 담긴 달은 눌러서 뺀다.
+ */
+function drawerPlan(g) {
+  const box = el('div', { className: 'drawer-plan' });
+
+  const paint = () => {
+    const inMonths = planMonthsOf(g.id);
+    setChildren(
+      box,
+      el('span', { className: 'drawer-plan-label', textContent: '수업 계획' }),
+      el(
+        'div',
+        { className: 'drawer-plan-months' },
+        ...SCHOOL_MONTHS.map((m) => {
+          const on = inMonths.includes(m);
+          const b = el('button', {
+            className: `plan-month-btn${on ? ' on' : ''}`,
+            textContent: `${m}월`,
+            title: on ? `${m}월에서 빼기` : `${m}월에 담기`,
+          });
+          b.onclick = () => {
+            if (on) removeFromPlan(m, g.id);
+            else addToPlan(m, g.id);
+            paint();
+            if (!$('#planView').hidden) openPlan();
+          };
+          return b;
+        })
+      )
+    );
+  };
+
+  paint();
+  return box;
 }
 
 /* ── 내 기록 편집 ─────────────────────────────────────── */
@@ -2494,6 +2535,100 @@ function autoShowNoteColumns() {
   renderHead();
 }
 
+/* ── 수업 계획 ────────────────────────────────────────────
+ *
+ * 학생들과 한 해 동안 어떤 게임을 할지 달별로 짜 두는 곳.
+ * 랭킹·내 서재와는 따로 놀지만, 게임 자료(BGG)와 내 기록(보유 여부)은 그대로 쓴다.
+ *
+ *   {
+ *     settings: { minutes: 40, students: 24 },
+ *     months: { '3': { note: '...', items: [ { id, note } ] }, ... }
+ *   }
+ *
+ * 학교 한 해는 3월에 시작해 이듬해 2월에 끝나므로 그 순서로 늘어놓는다.
+ */
+const SCHOOL_MONTHS = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2];
+
+const plan = JSON.parse(localStorage.getItem('lz.plan') ?? '{}');
+plan.settings ??= { minutes: 40, students: 24 };
+plan.months ??= {};
+
+function savePlan() {
+  // 기기 간 병합에서 어느 쪽이 최신인지 가리는 기준
+  plan.at = new Date().toISOString();
+  localStorage.setItem('lz.plan', JSON.stringify(plan));
+  if (!applyingRemote) syncSoon();
+}
+
+const monthOf = (m) => (plan.months[m] ??= { note: '', items: [] });
+
+/** 이 게임이 담긴 달들 */
+const planMonthsOf = (id) =>
+  SCHOOL_MONTHS.filter((m) => plan.months[m]?.items?.some((it) => String(it.id) === String(id)));
+
+function addToPlan(month, id) {
+  const mo = monthOf(month);
+  if (mo.items.some((it) => String(it.id) === String(id))) return false;
+  mo.items.push({ id: String(id), note: '' });
+  savePlan();
+  return true;
+}
+
+function removeFromPlan(month, id) {
+  const mo = plan.months[month];
+  if (!mo) return;
+  mo.items = mo.items.filter((it) => String(it.id) !== String(id));
+  if (!mo.items.length && !mo.note) delete plan.months[month];
+  savePlan();
+}
+
+/**
+ * 수업에 올릴 때 걸리는 것들을 짚어 준다.
+ *
+ * 이게 이 화면의 핵심이다. BGG의 인원·시간과 내 보유 여부를 합쳐야 나오는
+ * 정보라, 어느 한쪽만 봐서는 알 수 없다.
+ */
+function classNotes(g) {
+  const { minutes, students } = plan.settings;
+  const out = [];
+
+  if (g == null) return [{ kind: 'warn', text: '수집 범위 밖의 게임' }];
+
+  // 한 차시 안에 끝나는가. 설명 시간까지 생각하면 빠듯한 편이 낫다.
+  if (g.maxTime != null) {
+    if (g.maxTime > minutes) {
+      out.push({ kind: 'warn', text: `최대 ${g.maxTime}분 · 한 차시(${minutes}분) 초과` });
+    } else {
+      out.push({ kind: 'ok', text: `${g.minTime === g.maxTime ? g.maxTime : `${g.minTime}–${g.maxTime}`}분` });
+    }
+  }
+
+  // 학급 전체가 하려면 몇 벌이 필요한가
+  if (g.maxPlayers) {
+    const groups = Math.ceil(students / g.maxPlayers);
+    out.push({
+      kind: groups > 1 ? 'info' : 'ok',
+      text: `${g.minPlayers}–${g.maxPlayers}인 · ${students}명이면 ${groups}모둠 (${groups}벌 필요)`,
+    });
+  }
+
+  if (g.weight != null) {
+    out.push({ kind: g.weight >= 3 ? 'warn' : 'ok', text: `난이도 ${g.weight.toFixed(2)}/5` });
+  }
+
+  // 언어 의존도가 높으면 한글판이 없을 때 수업에 쓰기 어렵다
+  if (/extensive use of text|unplayable in another language/i.test(g.langDep ?? '')) {
+    out.push({ kind: 'warn', text: `${langDepText(g.langDep)}${g.kr ? '' : ' · 정발 확인 안 됨'}` });
+  }
+
+  const flag = state.flags[g.id];
+  if (flag === 'own') out.push({ kind: 'ok', text: '보유 중' });
+  else if (flag === 'gone') out.push({ kind: 'warn', text: '방출함 — 지금은 없음' });
+  else out.push({ kind: 'warn', text: '보유 표시 없음' });
+
+  return out;
+}
+
 /* ── 기기 간 동기화 ───────────────────────────────────────
  *
  * PC 에서 적은 것을 폰에서 보려면 중간에 저장소가 하나 있어야 한다.
@@ -2625,6 +2760,19 @@ async function syncPull({ quiet = false } = {}) {
       }
       savePlaces();
     }
+    /*
+     * 수업 계획은 통째로 최신 쪽을 쓴다.
+     *
+     * 기록처럼 게임 단위로 합치기 어렵다 — 달에서 뺀 것과 아직 안 담은 것을
+     * 구별할 방법이 없어서, 합치면 지운 게 되살아난다.
+     * 두 기기에서 동시에 짜는 일은 드물므로 나중에 저장한 쪽을 남긴다.
+     */
+    if (remote.plan && (remote.plan.at ?? '') >= (plan.at ?? '')) {
+      plan.settings = remote.plan.settings ?? plan.settings;
+      plan.months = remote.plan.months ?? {};
+      plan.at = remote.plan.at;
+      localStorage.setItem('lz.plan', JSON.stringify(plan));
+    }
 
     sync.rev = data.rev;
     sync.lastAt = data.updatedAt;
@@ -2649,7 +2797,7 @@ async function syncPull({ quiet = false } = {}) {
 async function syncPush({ retry = true } = {}) {
   if (!sync.id || !passphrase()) return false;
   const payload = await encryptPayload(
-    { notes, flags: state.flags, places, at: new Date().toISOString() },
+    { notes, flags: state.flags, places, plan, at: new Date().toISOString() },
     passphrase(),
     sync.id
   );
@@ -2688,6 +2836,215 @@ function syncSoon() {
   pushTimer = setTimeout(() => {
     syncPush().catch((e) => toast(`동기화 실패: ${e.message}`));
   }, 3000);
+}
+
+/* ── 수업 계획 화면 ───────────────────────────────────── */
+
+/** 달 하나에 게임을 넣는 작은 검색칸 */
+function planSearch(month, rerender) {
+  const box = el('div', { className: 'plan-add' });
+  const input = el('input', {
+    type: 'search',
+    className: 'sync-input',
+    placeholder: '게임 이름으로 찾아 담기',
+    autocomplete: 'off',
+  });
+  const hits = el('div', { className: 'plan-hits' });
+
+  let timer;
+  input.oninput = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const q = input.value.trim().toLowerCase();
+      if (q.length < 2) return setChildren(hits);
+      const found = state.data.games
+        .filter(
+          (g) =>
+            g.kor?.toLowerCase().includes(q) ||
+            g.name?.toLowerCase().includes(q) ||
+            g.korAlt?.some((n) => n.toLowerCase().includes(q))
+        )
+        .slice(0, 8);
+      setChildren(
+        hits,
+        ...found.map((g) => {
+          const b = el('button', { className: 'plan-hit' });
+          b.append(
+            el('img', { src: g.thumb ?? '', alt: '', loading: 'lazy' }),
+            el(
+              'span',
+              {},
+              el('b', { textContent: g.kor ?? g.name }),
+              el('small', {
+                textContent: `${g.minPlayers}–${g.maxPlayers}인 · ${g.maxTime ?? '?'}분 · 난이도 ${g.weight?.toFixed(1) ?? '?'}`,
+              })
+            )
+          );
+          b.onclick = () => {
+            if (addToPlan(month, g.id)) rerender();
+            else toast('이미 담겨 있습니다');
+            input.value = '';
+            setChildren(hits);
+          };
+          return b;
+        }),
+        found.length ? null : el('p', { className: 'sub', textContent: '찾는 게임이 없습니다.' })
+      );
+    }, 180);
+  };
+
+  box.append(input, hits);
+  return box;
+}
+
+function openPlan() {
+  const view = $('#planView');
+
+  const rerender = () => openPlan();
+
+  const close = el('button', { className: 'close', textContent: '×', title: '닫기' });
+  close.onclick = () => (view.hidden = true);
+
+  // ── 수업 설정: 여기 값이 아래 모든 판단(모둠 수, 시간 초과)의 기준이 된다
+  const setting = (label, key, min, max, unit) => {
+    const inp = el('input', { type: 'number', className: 'sync-input', min, max, value: plan.settings[key] });
+    inp.onchange = () => {
+      const v = Number(inp.value);
+      if (Number.isFinite(v) && v > 0) {
+        plan.settings[key] = v;
+        savePlan();
+        rerender();
+      }
+    };
+    return el(
+      'div',
+      { className: 'sync-field' },
+      el('label', { textContent: label }),
+      el('span', { className: 'sub', textContent: unit }),
+      el('div', { className: 'sync-field-row' }, inp)
+    );
+  };
+
+  const monthBlocks = SCHOOL_MONTHS.map((m) => {
+    const mo = plan.months[m];
+    const items = mo?.items ?? [];
+
+    const head = el(
+      'div',
+      { className: 'plan-month-head' },
+      el('h3', { textContent: `${m}월` }),
+      el('span', { className: 'sub', textContent: items.length ? `${items.length}개` : '비어 있음' })
+    );
+
+    const noteInput = el('input', {
+      type: 'text',
+      className: 'plan-month-note',
+      placeholder: '이 달의 주제 (예: 규칙이 쉬운 것부터, 협력 게임 익히기)',
+      value: mo?.note ?? '',
+    });
+    noteInput.onchange = () => {
+      monthOf(m).note = noteInput.value.trim();
+      savePlan();
+    };
+
+    const list = el(
+      'div',
+      { className: 'plan-items' },
+      ...items.map((it) => {
+        const g = gameById(it.id);
+        const card = el('div', { className: 'plan-item' });
+
+        const title = el(
+          'div',
+          { className: 'plan-item-head' },
+          el('img', { src: g?.thumb ?? '', alt: '', loading: 'lazy' }),
+          el(
+            'div',
+            { className: 'plan-item-title' },
+            el('b', { textContent: g ? g.kor ?? g.name : `#${it.id}` }),
+            el(
+              'div',
+              { className: 'plan-badges' },
+              ...classNotes(g).map((n) =>
+                el('span', { className: `plan-badge ${n.kind}`, textContent: n.text })
+              )
+            )
+          )
+        );
+        if (g) {
+          title.style.cursor = 'pointer';
+          title.onclick = () => openDrawer(g);
+        }
+
+        const memo = el('input', {
+          type: 'text',
+          className: 'plan-item-note',
+          placeholder: '수업 메모 (학습 목표, 준비물, 진행 방식)',
+          value: it.note ?? '',
+        });
+        memo.onchange = () => {
+          it.note = memo.value.trim();
+          savePlan();
+        };
+
+        const del = el('button', { className: 'play-del', textContent: '×', title: '이 달에서 빼기' });
+        del.onclick = () => {
+          removeFromPlan(m, it.id);
+          rerender();
+        };
+
+        card.append(title, el('div', { className: 'plan-item-foot' }, memo, del));
+        return card;
+      }),
+      items.length ? null : el('p', { className: 'sub', textContent: '아직 담은 게임이 없습니다.' })
+    );
+
+    return el('section', { className: 'plan-month' }, head, noteInput, list, planSearch(m, rerender));
+  });
+
+  // ── 한 해 요약
+  const all = SCHOOL_MONTHS.flatMap((m) => (plan.months[m]?.items ?? []).map((it) => it.id));
+  const owned = all.filter((id) => state.flags[id] === 'own').length;
+  const overTime = all.filter((id) => {
+    const g = gameById(id);
+    return g?.maxTime != null && g.maxTime > plan.settings.minutes;
+  }).length;
+
+  setChildren(
+    view,
+    close,
+    el('h2', { textContent: '수업 계획' }),
+    el('p', {
+      className: 'sub',
+      textContent:
+        '한 해 동안 학생들과 할 게임을 달별로 짜 둡니다. 게임 자료와 보유 여부는 이 사이트의 것을 그대로 씁니다.',
+    }),
+    el(
+      'div',
+      { className: 'sync-fields plan-settings' },
+      setting('한 차시', 'minutes', 10, 180, '이 시간을 넘는 게임은 표시해 줍니다'),
+      setting('학급 인원', 'students', 1, 40, '필요한 모둠 수를 계산합니다')
+    ),
+    all.length
+      ? el(
+          'div',
+          { className: 'shelf-stats plan-summary' },
+          el('div', { className: 'shelf-stat' },
+            el('span', { className: 'shelf-stat-label', textContent: '담은 게임' }),
+            el('strong', { textContent: `${all.length}개` })),
+          el('div', { className: 'shelf-stat' },
+            el('span', { className: 'shelf-stat-label', textContent: '보유 중' }),
+            el('strong', { textContent: `${owned}개` }),
+            el('span', { className: 'shelf-stat-note', textContent: owned < all.length ? `${all.length - owned}개는 확인 필요` : '전부 있음' })),
+          el('div', { className: 'shelf-stat' },
+            el('span', { className: 'shelf-stat-label', textContent: '한 차시 초과' }),
+            el('strong', { textContent: `${overTime}개` }),
+            el('span', { className: 'shelf-stat-note', textContent: overTime ? '두 차시로 나누거나 축약 규칙 필요' : '' }))
+        )
+      : null,
+    el('div', { className: 'plan-months' }, ...monthBlocks)
+  );
+  view.hidden = false;
 }
 
 /** 내 서재 안의 동기화 설정 구역 */
@@ -3276,6 +3633,8 @@ function exportNotes() {
     exportedAt: new Date().toISOString(),
     flags: state.flags,
     notes,
+    places,
+    plan,
   };
   const url = URL.createObjectURL(
     new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
@@ -3324,6 +3683,18 @@ function importNotes() {
 
     Object.assign(notes, data.notes);
     if (data.flags) Object.assign(state.flags, data.flags);
+    if (data.places) {
+      for (const kind of ['buy', 'sell']) {
+        places[kind] = [...new Set([...(places[kind] ?? []), ...(data.places[kind] ?? [])])];
+      }
+      savePlaces();
+    }
+    // 수업 계획은 통째로 들여온다(달에서 뺀 것과 안 담은 것을 구별할 수 없어 합치지 않는다)
+    if (data.plan?.months) {
+      plan.settings = data.plan.settings ?? plan.settings;
+      plan.months = data.plan.months;
+      savePlan();
+    }
     saveNotes();
     saveFlags();
     autoShowNoteColumns();
@@ -3951,6 +4322,7 @@ async function main() {
     recompute();
   };
   $('#myShelf').onclick = openShelf;
+  $('#myPlan').onclick = openPlan;
 
   // 다른 기기에서 적은 것을 열자마자 받아온다. 실패해도 사이트는 그대로 쓴다.
   if (sync.id && passphrase() && CONFIG.LIVE_PROXY) {

@@ -2739,6 +2739,231 @@ body.resizing {
   border-color: var(--accent);
 }
 
+/* ── 수업 계획 ──────────────────────────────────────────── */
+.plan-settings {
+  max-width: 520px;
+}
+
+.plan-summary {
+  margin-bottom: 24px;
+}
+
+/* 달을 연표처럼 세로로 늘어놓는다. 넓은 화면에서는 두 줄로 나눠 한눈에 본다. */
+.plan-months {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.plan-month {
+  padding: 13px 14px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.plan-month-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.plan-month-head h3 {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.plan-month-note,
+.plan-item-note {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.plan-month-note:focus,
+.plan-item-note:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.plan-items {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.plan-item {
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.plan-item-head {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+}
+
+.plan-item-head img {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex: none;
+  background: var(--surface-3);
+}
+
+.plan-item-title {
+  min-width: 0;
+  flex: 1;
+}
+
+.plan-item-title b {
+  display: block;
+  font-size: 13px;
+  font-weight: 650;
+  margin-bottom: 4px;
+}
+
+/* 수업에 올릴 때 걸리는 것들 — 시간 초과·모둠 수·보유 여부 */
+.plan-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.plan-badge {
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+
+.plan-badge.ok {
+  background: var(--up-soft);
+  color: var(--up);
+}
+
+.plan-badge.warn {
+  background: var(--down-soft);
+  color: var(--down);
+}
+
+.plan-badge.info {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.plan-item-foot {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 7px;
+}
+
+/* 담기 검색 */
+.plan-add {
+  position: relative;
+}
+
+.plan-hits {
+  display: grid;
+  gap: 3px;
+  margin-top: 5px;
+}
+
+.plan-hit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.plan-hit:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.plan-hit img {
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+  object-fit: cover;
+  flex: none;
+  background: var(--surface-3);
+}
+
+.plan-hit b {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.plan-hit small {
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+/* 상세 패널에서 바로 담기 */
+.drawer-plan {
+  margin: 4px 0 12px;
+}
+
+.drawer-plan-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+  margin-bottom: 5px;
+}
+
+.drawer-plan-months {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.plan-month-btn {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.plan-month-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.plan-month-btn.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-fill);
+}
+
 /* ── 결과 하단 줄 ──────────────────────────────────────── */
 .result-foot {
   display: flex;
