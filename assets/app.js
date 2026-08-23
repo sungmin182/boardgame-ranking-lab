@@ -2927,6 +2927,282 @@ function syncSoon() {
   }, 3000);
 }
 
+/* ── 성취기준으로 게임 찾기 ───────────────────────────────
+ *
+ * 교육과정 성취기준을 고르면 거기에 어울릴 만한 게임을 추려 준다.
+ *
+ * 자료는 두 개다.
+ *   data/standards.json      성취기준 목록 (NCIC 엑셀 → import-standards.mjs)
+ *   data/standard-rules.json 낱말 → 메커니즘 연결 규칙
+ * 둘 다 수업에 쓸 때만 필요하므로 화면을 열 때 한 번만 받아온다.
+ *
+ * 추천은 후보를 좁혀 줄 뿐이다. BGG 메커니즘은 교육용 분류가 아니라서,
+ * 실제로 그 수업에 맞는지는 게임을 보고 사람이 정해야 한다. 화면에도 그렇게 적는다.
+ */
+let standardsCache = null;
+
+async function loadStandards() {
+  if (standardsCache) return standardsCache;
+  const get = (p) =>
+    fetch(versioned(p))
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+  const [std, rules] = await Promise.all([
+    get('data/standards.json'),
+    get('data/standard-rules.json'),
+  ]);
+  standardsCache = {
+    standards: std?.standards ?? [],
+    rules: rules?.rules ?? [],
+    fit: rules?.classFit ?? {},
+  };
+  return standardsCache;
+}
+
+/**
+ * 성취기준 하나에 어울릴 만한 게임을 고른다.
+ *
+ * 1) 성취기준 문장에서 규칙의 낱말을 찾아 어떤 규칙이 걸리는지 본다
+ * 2) 그 규칙이 가리키는 메커니즘·카테고리를 가진 게임에 점수를 준다
+ * 3) 수업에 쓸 수 있는지로 가감점을 준다(시간 초과, 너무 무거움, 보유 여부 …)
+ */
+function recommendFor(std, { rules, fit }) {
+  const haystack = `${std.text} ${std.area ?? ''}`;
+  /*
+   * 한 글자 낱말은 쓰지 않는다.
+   * "시"를 넣었더니 시장·시간·제시·표시에 전부 걸려 거의 모든 성취기준에
+   * 그 규칙이 잡혔다. 한국어는 낱말 경계가 없어서 짧은 낱말은 오탐이 크다.
+   */
+  const hits = rules.filter((r) =>
+    r.keywords.some((k) => k.trim().length >= 2 && haystack.includes(k))
+  );
+  if (!hits.length) return { hits: [], games: [] };
+
+  const scored = [];
+  for (const g of state.data.games) {
+    let score = 0;
+    const why = [];
+    for (const r of hits) {
+      const m = (r.prefer.mechanics ?? []).some((x) => g.mechanics?.includes(x));
+      const c = (r.prefer.categories ?? []).some((x) => g.categories?.includes(x));
+      if (m || c) {
+        score += r.weight ?? 1;
+        why.push(r.why);
+      }
+    }
+    if (score <= 0) continue;
+
+    // 수업에 쓸 수 있는가 — 이 가감점이 없으면 무겁고 긴 명작이 위로 올라온다
+    const bump = (v) => (score += v ?? 0);
+    if (g.categories?.includes('Educational')) bump(fit.educationalBonus);
+    if (g.categories?.includes("Children's Game")) bump(fit.childrensBonus);
+    if (state.flags[g.id] === 'own') bump(fit.ownedBonus);
+    if (g.kr) bump(fit.krBonus);
+    if (g.maxTime != null && g.maxTime > plan.settings.minutes) bump(fit.overTimePenalty);
+    if (g.weight != null && g.weight >= (fit.heavyWeight ?? 2.5)) bump(fit.tooHeavyPenalty);
+    if (g.minAge != null && g.minAge > 11) bump(fit.tooOldPenalty);
+
+    scored.push({ g, score, why: [...new Set(why)] });
+  }
+
+  scored.sort((a, b) => b.score - a.score || (a.g.maxTime ?? 999) - (b.g.maxTime ?? 999));
+  return { hits, games: scored.slice(0, 12) };
+}
+
+/** 성취기준 하나를 폈을 때 아래에 붙는 추천 목록 */
+function standardRecommendations(std, data) {
+  const { hits, games } = recommendFor(std, data);
+  const box = el('div', {});
+
+  box.append(
+    hits.length
+      ? el('p', {
+          className: 'sub',
+          textContent: `걸린 규칙: ${hits.map((h) => h.id).join(', ')} · 후보일 뿐이니 게임을 보고 정하세요`,
+        })
+      : el('p', {
+          className: 'sub',
+          textContent:
+            '이 성취기준에 걸리는 규칙이 없습니다. data/standard-rules.json 에 낱말을 더하면 잡힙니다.',
+        })
+  );
+
+  if (!games.length) {
+    if (hits.length) box.append(el('p', { className: 'sub', textContent: '조건에 맞는 게임을 찾지 못했습니다.' }));
+    return box;
+  }
+
+  box.append(
+    el(
+      'div',
+      { className: 'std-games' },
+      ...games.map(({ g, why }) => {
+        const open = el(
+          'button',
+          { className: 'std-game-main' },
+          el('img', { src: g.thumb ?? '', alt: '', loading: 'lazy' }),
+          el(
+            'span',
+            {},
+            el('b', { textContent: g.kor ?? g.name }),
+            el('small', {
+              textContent:
+                `${g.minPlayers}–${g.maxPlayers}인 · ${g.maxTime ?? '?'}분` +
+                `${g.weight != null ? ` · 난이도 ${g.weight.toFixed(1)}` : ''}` +
+                `${state.flags[g.id] === 'own' ? ' · 보유 중' : ''}`,
+            }),
+            el('small', { className: 'std-why', textContent: why.join(' / ') })
+          )
+        );
+        open.onclick = () => openDrawer(g);
+
+        // 어느 달에 담을지 고른다. 담을 때 성취기준을 메모로 남겨 둔다.
+        const add = el('select', { className: 'std-add' });
+        setChildren(
+          add,
+          el('option', { value: '', textContent: '수업에 담기' }),
+          ...SCHOOL_MONTHS.map((m) => el('option', { value: String(m), textContent: `${m}월` }))
+        );
+        add.onchange = () => {
+          const m = Number(add.value);
+          add.value = '';
+          if (!m) return;
+          if (!addToPlan(m, g.id)) return toast('이미 담겨 있습니다');
+          const item = plan.months[m].items.find((it) => String(it.id) === String(g.id));
+          if (item && !item.note) item.note = `[${std.code}] ${std.text.slice(0, 40)}`;
+          savePlan();
+          toast(`${m}월에 담았습니다`);
+          refreshPlanIfOpen();
+        };
+
+        return el('div', { className: 'std-game' }, open, add);
+      })
+    )
+  );
+  return box;
+}
+
+async function openStandards() {
+  const view = $('#standardsView');
+  const data = await loadStandards();
+
+  const close = el('button', { className: 'close', textContent: '×', title: '닫기' });
+  close.onclick = () => (view.hidden = true);
+
+  // 아직 자료를 안 넣었을 때: 무엇을 해야 하는지 화면에서 알려준다
+  if (!data.standards.length) {
+    setChildren(
+      view,
+      close,
+      el('h2', { textContent: '성취기준으로 게임 찾기' }),
+      el('p', {
+        className: 'sub',
+        textContent:
+          '성취기준 자료가 아직 없습니다. 국가교육과정정보센터(ncic.re.kr)에서 성취기준 엑셀을 내려받아 CSV로 저장한 뒤, 아래 명령으로 넣으면 여기에 나타납니다.',
+      }),
+      el('pre', { className: 'std-cmd', textContent: 'node scripts/import-standards.mjs 파일.csv' }),
+      el('p', {
+        className: 'sub',
+        textContent:
+          'NCIC은 robots.txt로 자동 접근을 막고 있어 프로그램이 대신 받아올 수 없습니다. 사람이 내려받아야 합니다.',
+      })
+    );
+    view.hidden = false;
+    return;
+  }
+
+  const subjects = [...new Set(data.standards.map((s) => s.subject))].sort();
+  const ui = { subject: null, q: '', open: null };
+  const body = el('div', { className: 'std-body' });
+
+  const paint = () => {
+    let list = data.standards;
+    if (ui.subject) list = list.filter((s) => s.subject === ui.subject);
+    if (ui.q) {
+      const q = ui.q.toLowerCase();
+      list = list.filter((s) => s.text.toLowerCase().includes(q) || s.code.toLowerCase().includes(q));
+    }
+
+    setChildren(
+      body,
+      el('p', { className: 'sub', textContent: `${list.length}개` }),
+      ...list.slice(0, 60).map((s) => {
+        const rec = el('div', { className: 'std-rec' });
+        const head = el(
+          'button',
+          { className: 'std-head' },
+          el('span', { className: 'std-code', textContent: s.code }),
+          el('span', { className: 'std-text', textContent: s.text }),
+          s.area ? el('span', { className: 'std-area', textContent: s.area }) : null
+        );
+        head.onclick = () => {
+          if (ui.open === s.code) {
+            ui.open = null;
+            setChildren(rec);
+            return;
+          }
+          ui.open = s.code;
+          setChildren(rec, standardRecommendations(s, data));
+        };
+        if (ui.open === s.code) setChildren(rec, standardRecommendations(s, data));
+        return el('div', { className: 'std-item' }, head, rec);
+      }),
+      list.length > 60
+        ? el('p', { className: 'sub', textContent: `외 ${list.length - 60}개 — 교과나 검색으로 좁혀 보세요.` })
+        : null
+    );
+  };
+
+  const search = el('input', {
+    type: 'search',
+    className: 'sync-input',
+    placeholder: '성취기준 내용이나 코드로 찾기',
+  });
+  let qt;
+  search.oninput = () => {
+    clearTimeout(qt);
+    qt = setTimeout(() => {
+      ui.q = search.value.trim();
+      paint();
+    }, 160);
+  };
+
+  const chips = el('div', { className: 'chips' });
+  setChildren(
+    chips,
+    ...subjects.map((sub) => {
+      const b = el('button', { className: 'chip', textContent: sub });
+      b.onclick = () => {
+        ui.subject = ui.subject === sub ? null : sub;
+        chips.querySelectorAll('.chip').forEach((c) => c.classList.remove('on'));
+        if (ui.subject) b.classList.add('on');
+        paint();
+      };
+      return b;
+    })
+  );
+
+  paint();
+  setChildren(
+    view,
+    close,
+    el('h2', { textContent: '성취기준으로 게임 찾기' }),
+    el('p', {
+      className: 'sub',
+      textContent:
+        '성취기준을 누르면 어울릴 만한 게임을 추려 줍니다. 한 차시 시간과 학급 인원은 수업 계획에서 정한 값을 씁니다.',
+    }),
+    el('p', {
+      className: 'std-caution',
+      textContent:
+        '추천은 후보를 좁혀 줄 뿐입니다. BGG의 메커니즘 분류는 교육용으로 만든 것이 아니므로, 실제로 그 수업에 맞는지는 게임을 보고 정하세요.',
+    }),
+    el('div', { className: 'std-controls' }, search, chips),
+    body
+  );
+  view.hidden = false;
+}
+
 /* ── 수업 계획 화면 ───────────────────────────────────── */
 
 /** 달 하나에 게임을 넣는 작은 검색칸 */
@@ -4498,6 +4774,7 @@ async function main() {
   };
   $('#myShelf').onclick = openShelf;
   $('#myPlan').onclick = openPlan;
+  $('#myStandards').onclick = () => openStandards().catch((e) => toast('성취기준 자료를 불러오지 못했습니다: ' + e.message));
 
   // 다른 기기에서 적은 것을 열자마자 받아온다. 실패해도 사이트는 그대로 쓴다.
   if (sync.id && passphrase() && CONFIG.LIVE_PROXY) {

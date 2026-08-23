@@ -73,6 +73,9 @@ jobs:
           cp index.html _site/
           cp -r assets _site/
           cp data/games.json _site/data/
+          # 성취기준 자료. 아직 없을 수도 있으므로 있을 때만 복사한다.
+          cp data/standard-rules.json _site/data/ 2>/dev/null || true
+          cp data/standards.json _site/data/ 2>/dev/null || true
           STAMP="${{ github.run_id }}"
           sed -i \
             -e "s|assets/style\.css|assets/style.css?v=$STAMP|g" \
