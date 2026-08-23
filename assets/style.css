@@ -3208,3 +3208,52 @@ body.resizing {
   font-size: 12px;
   overflow-x: auto;
 }
+
+/* ── 수업 계획: 달 사이 옮기기 ──────────────────────────── */
+.plan-item {
+  cursor: grab;
+}
+
+.plan-item:active {
+  cursor: grabbing;
+}
+
+/* 끌고 있는 카드는 흐리게 — 어느 것을 집었는지 보이게 한다 */
+.plan-item.dragging {
+  opacity: 0.4;
+}
+
+/* 놓으면 이 카드 앞에 끼워진다는 표시 */
+.plan-item.drop-before {
+  border-top: 3px solid var(--accent);
+}
+
+/* 받을 수 있는 달 */
+.plan-month.drop-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* 입력칸과 버튼은 끌기 대상이 아니다. 그러지 않으면 글자 선택이 안 된다. */
+.plan-item input,
+.plan-item select,
+.plan-item button {
+  cursor: auto;
+}
+
+.plan-move {
+  flex: none;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.plan-move:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}

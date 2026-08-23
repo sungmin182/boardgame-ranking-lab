@@ -2667,6 +2667,36 @@ function removeFromPlan(month, id) {
 }
 
 /**
+ * 담아둔 게임을 다른 달로 옮기거나, 같은 달 안에서 순서를 바꾼다.
+ *
+ * 메모를 그대로 들고 간다 — 옮겼다고 수업 메모가 사라지면 다시 적어야 한다.
+ * beforeId 를 주면 그 항목 앞에 끼우고, 없으면 맨 뒤에 붙인다.
+ * 이미 그 달에 있는 게임을 또 옮기려 하면 아무 일도 하지 않는다(중복 방지).
+ */
+function movePlanItem(fromMonth, toMonth, id, beforeId = null) {
+  const from = plan.months[fromMonth];
+  if (!from) return false;
+  const idx = from.items.findIndex((it) => String(it.id) === String(id));
+  if (idx < 0) return false;
+
+  if (String(fromMonth) !== String(toMonth)) {
+    const dup = plan.months[toMonth]?.items?.some((it) => String(it.id) === String(id));
+    if (dup) return false;
+  }
+
+  const [item] = from.items.splice(idx, 1);
+  if (!from.items.length && !from.note) delete plan.months[fromMonth];
+
+  const to = monthOf(toMonth);
+  const at = beforeId == null ? -1 : to.items.findIndex((it) => String(it.id) === String(beforeId));
+  if (at < 0) to.items.push(item);
+  else to.items.splice(at, 0, item);
+
+  savePlan();
+  return true;
+}
+
+/**
  * 수업에 올릴 때 걸리는 것들을 짚어 준다.
  *
  * 이게 이 화면의 핵심이다. BGG의 인원·시간과 내 보유 여부를 합쳐야 나오는
@@ -3347,6 +3377,7 @@ function openPlan() {
           className: 'plan-item-note',
           placeholder: '수업 메모 (학습 목표, 준비물, 진행 방식)',
           value: it.note ?? '',
+          draggable: false, // 부모가 draggable 이라 이걸 꺼야 글자를 고를 수 있다
         });
         memo.onchange = () => {
           it.note = memo.value.trim();
@@ -3359,13 +3390,104 @@ function openPlan() {
           rerender();
         };
 
-        card.append(title, el('div', { className: 'plan-item-foot' }, memo, del));
+        /*
+         * 달 사이 옮기기.
+         *
+         * 끌어다 놓는 쪽이 자연스럽지만 휴대폰에서는 HTML5 드래그가 동작하지 않는다.
+         * 그래서 고르는 방식도 함께 둔다 — 어느 기기에서든 옮길 수는 있어야 한다.
+         */
+        const move = el('select', { className: 'plan-move', title: '다른 달로 옮기기' });
+        setChildren(
+          move,
+          el('option', { value: '', textContent: '옮기기' }),
+          ...SCHOOL_MONTHS.filter((x) => x !== m).map((x) =>
+            el('option', { value: String(x), textContent: `${x}월로` })
+          )
+        );
+        move.onchange = () => {
+          const to = Number(move.value);
+          move.value = '';
+          if (!to) return;
+          if (movePlanItem(m, to, it.id)) {
+            toast(`${to}월로 옮겼습니다`);
+            rerender();
+          } else toast(`${to}월에 이미 있습니다`);
+        };
+
+        // ── 끌어다 놓기 (데스크톱)
+        card.draggable = true;
+        card.dataset.id = String(it.id);
+        card.dataset.month = String(m);
+        card.ondragstart = (e) => {
+          /*
+           * 입력칸·버튼에서 시작한 끌기는 무시한다.
+           *
+           * draggable 인 부모 안에서는 브라우저가 mousedown 을 끌기로 채가서
+           * 메모 글자를 선택하거나 커서를 옮길 수 없게 된다.
+           */
+          if (e.target.closest('input, select, button, textarea')) {
+            e.preventDefault();
+            return;
+          }
+          e.dataTransfer.effectAllowed = 'move';
+          // 텍스트로도 넣어 둔다. 일부 브라우저는 비어 있으면 끌기를 시작하지 않는다.
+          e.dataTransfer.setData('text/plain', `${m}:${it.id}`);
+          card.classList.add('dragging');
+        };
+        card.ondragend = () => {
+          card.classList.remove('dragging');
+          document.querySelectorAll('.plan-month.drop-on, .plan-item.drop-before')
+            .forEach((n) => n.classList.remove('drop-on', 'drop-before'));
+        };
+        // 다른 카드 위에 올리면 그 앞에 끼운다
+        card.ondragover = (e) => {
+          e.preventDefault();
+          card.classList.add('drop-before');
+        };
+        card.ondragleave = () => card.classList.remove('drop-before');
+        card.ondrop = (e) => {
+          e.preventDefault();
+          e.stopPropagation(); // 달 전체의 drop 이 또 처리하지 않도록
+          card.classList.remove('drop-before');
+          const [fromM, dragId] = String(e.dataTransfer.getData('text/plain')).split(':');
+          if (!dragId || dragId === String(it.id)) return;
+          if (movePlanItem(Number(fromM), m, dragId, it.id)) rerender();
+          else toast('이 달에 이미 있습니다');
+        };
+
+        card.append(title, el('div', { className: 'plan-item-foot' }, memo, move, del));
         return card;
       }),
       items.length ? null : el('p', { className: 'sub', textContent: '아직 담은 게임이 없습니다.' })
     );
 
-    return el('section', { className: 'plan-month' }, head, noteInput, list, planSearch(m, rerender));
+    const section = el('section', { className: 'plan-month' }, head, noteInput, list, planSearch(m, rerender));
+
+    /*
+     * 달 전체를 받는 자리로 둔다.
+     *
+     * 카드 위에 놓으면 그 앞에 끼우고, 달의 빈 곳에 놓으면 맨 뒤에 붙는다.
+     * 빈 달에도 옮길 수 있어야 하므로 구역 자체가 받아야 한다.
+     */
+    section.ondragover = (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      section.classList.add('drop-on');
+    };
+    section.ondragleave = (e) => {
+      // 안쪽 요소로 옮겨간 것뿐이면 그대로 둔다
+      if (!section.contains(e.relatedTarget)) section.classList.remove('drop-on');
+    };
+    section.ondrop = (e) => {
+      e.preventDefault();
+      section.classList.remove('drop-on');
+      const [fromM, dragId] = String(e.dataTransfer.getData('text/plain')).split(':');
+      if (!dragId) return;
+      if (movePlanItem(Number(fromM), m, dragId)) rerender();
+      else if (String(fromM) !== String(m)) toast('이 달에 이미 있습니다');
+    };
+
+    return section;
   });
 
   // ── 한 해 요약
