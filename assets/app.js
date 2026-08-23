@@ -2974,7 +2974,8 @@ function recommendFor(std, { rules, fit }) {
    * 그 규칙이 잡혔다. 한국어는 낱말 경계가 없어서 짧은 낱말은 오탐이 크다.
    */
   const hits = rules.filter((r) =>
-    r.keywords.some((k) => k.trim().length >= 2 && haystack.includes(k))
+    (r.subjects ? r.subjects.includes(std.subject) : true) &&
+      r.keywords.some((k) => k.trim().length >= 2 && haystack.includes(k))
   );
   if (!hits.length) return { hits: [], games: [] };
 

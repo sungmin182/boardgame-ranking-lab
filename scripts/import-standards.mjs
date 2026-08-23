@@ -28,6 +28,22 @@ const COLUMNS = {
   grade: ['학년', '학년군', '학년(군)', '대상'],
 };
 
+/**
+ * 탭으로 나뉜 표를 읽는다.
+ *
+ * 성취기준 문장에는 쉼표가 흔해서 CSV 로 저장하면 따옴표로 감싸지는데, 자료를
+ * 표에서 그대로 복사해 붙이면 탭 구분이 된다. 그쪽이 덜 깨지므로 둘 다 받는다.
+ */
+function parseTsv(text) {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  if (!lines.length) return [];
+  const header = lines[0].split('\t').map((h) => h.trim());
+  return lines.slice(1).map((line) => {
+    const cells = line.split('\t');
+    return Object.fromEntries(header.map((h, i) => [h, (cells[i] ?? '').trim()]));
+  });
+}
+
 /** 헤더에서 원하는 열을 찾는다. 정확히 같은 이름을 먼저, 없으면 포함하는 것을 쓴다. */
 function pickColumn(headers, candidates) {
   for (const c of candidates) {
@@ -56,7 +72,8 @@ const SUBJECT_BY_MARK = {
 const GRADE_BAND = { 2: '1~2학년', 4: '3~4학년', 6: '5~6학년' };
 
 function parseCode(raw) {
-  const m = String(raw ?? '').match(/\[?\s*(\d)([가-힣])(\d{2})\s*-\s*(\d{2})\s*\]?/);
+  // 붙임표가 - 가 아니라 – (엔대시)인 자료가 있다. 사회과 [4사01–01] 이 그렇다.
+  const m = String(raw ?? '').match(/\[?\s*(\d)([가-힣])(\d{2})\s*[-–—]\s*(\d{2})\s*\]?/);
   if (!m) return null;
   const [, band, mark, area, no] = m;
   return {
@@ -69,8 +86,10 @@ function parseCode(raw) {
 
 export async function importStandards(csvPath, subjectHint = null) {
   const text = await fs.readFile(csvPath, 'utf8');
-  const rows = parseCsv(text.replace(/^\uFEFF/, ''));
-  if (!rows.length) throw new Error('CSV 에 행이 없습니다.');
+  const clean = text.replace(/^\uFEFF/, '');
+  const firstLine = clean.split(/\r?\n/)[0] ?? '';
+  const rows = firstLine.includes('\t') ? parseTsv(clean) : parseCsv(clean);
+  if (!rows.length) throw new Error('읽을 행이 없습니다.');
 
   const headers = Object.keys(rows[0]);
   const col = Object.fromEntries(
@@ -98,7 +117,7 @@ export async function importStandards(csvPath, subjectHint = null) {
 
     // 문장 앞의 [4수01-01] 표기는 떼어낸다
     const body = String(rawText ?? '')
-      .replace(/\[?\s*\d[가-힣]\d{2}\s*-\s*\d{2}\s*\]?/, '')
+      .replace(/\[?\s*\d[가-힣]\d{2}\s*[-–—]\s*\d{2}\s*\]?/, '')
       .trim();
 
     standards.push({
